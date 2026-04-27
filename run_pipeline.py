@@ -20,9 +20,16 @@ import json
 import os
 import sys
 import time
-import requests
+try:
+    import requests
+except ModuleNotFoundError:
+    requests = None
 from datetime import datetime
-from dotenv import load_dotenv
+try:
+    from dotenv import load_dotenv
+except ModuleNotFoundError:
+    def load_dotenv():
+        return False
 
 load_dotenv()
 
@@ -34,10 +41,13 @@ BASE_DIR = os.path.dirname(__file__)  # D:\Company Registrations
 CERTS_BASE_DIR = os.path.join(BASE_DIR, "certificates")
 OUTPUT_DIR = os.path.join(BASE_DIR, "pipeline_output")
 EXCEL_FILE = os.path.join(OUTPUT_DIR, "companies_pipeline.xlsx")
+PLAY_DOSSIER_DIR = os.path.join(OUTPUT_DIR, "play_console_dossiers")
 
 
 def ch_get(path, params=None):
     """Companies House API GET with retry on 429 and network errors."""
+    if requests is None:
+        raise RuntimeError("The 'requests' package is required for live Companies House API calls.")
     for attempt in range(5):
         try:
             resp = requests.get(
@@ -288,10 +298,13 @@ def get_duns_number(company_number, headless=True):
                 org = candidates[0].get('organization', {})
                 duns = org.get('duns', '')
                 name = org.get('primaryName', '')
+                address = _format_dnb_address(org)
                 return {
                     'duns_number': duns,
                     'status': 'found' if duns else 'not_found',
                     'company_name': name,
+                    'dnb_name': name,
+                    'dnb_address': address,
                 }
             return {'duns_number': '', 'status': 'not_found'}
         except Exception as e:
@@ -301,6 +314,36 @@ def get_duns_number(company_number, headless=True):
             if attempt == 2:
                 return {'duns_number': '', 'status': 'error', 'error': str(e)}
             time.sleep(2)
+
+
+def _format_dnb_address(org):
+    """Best-effort formatting for the varying D&B address JSON shapes."""
+    addr = (
+        org.get("primaryAddress")
+        or org.get("registeredAddress")
+        or org.get("businessAddress")
+        or {}
+    )
+    if not isinstance(addr, dict):
+        return ""
+    parts = []
+    street = addr.get("streetAddress") or {}
+    if isinstance(street, dict):
+        parts.extend(street.get(k, "") for k in ["line1", "line2"] if street.get(k))
+    elif street:
+        parts.append(str(street))
+    for key in ["addressLocality", "addressRegion", "postalCode"]:
+        val = addr.get(key)
+        if isinstance(val, dict):
+            val = val.get("name") or val.get("abbreviatedName")
+        if val:
+            parts.append(str(val))
+    country = addr.get("addressCountry")
+    if isinstance(country, dict):
+        country = country.get("name") or country.get("isoAlpha2Code")
+    if country:
+        parts.append(str(country))
+    return ", ".join(parts)
 
 
 # ============================================================
@@ -316,7 +359,11 @@ def _safe_folder_name(company_name):
 
 def register_company_domain(company_name, details):
     """Find cheapest domain and register it for a company."""
-    from namecheap_automation import find_cheapest_domain, register_domain
+    from namecheap_automation import (
+        find_cheapest_domain,
+        get_existing_account_contact,
+        register_domain,
+    )
 
     # Find cheapest available domain
     search_result = find_cheapest_domain(company_name)
@@ -326,34 +373,40 @@ def register_company_domain(company_name, details):
     best = search_result["best"]
     domain = best["domain"]
 
-    # Build registrant info from company details
-    directors = details.get("directors", [])
-    if directors:
-        # CH format: "SURNAME, Firstname"
-        parts = directors[0]["name"].split(",", 1)
-        if len(parts) == 2:
-            last_name = parts[0].strip().title()
-            first_name = parts[1].strip().split()[0].title() if parts[1].strip() else "Director"
+    # Domain registration contact should match the configured Namecheap account
+    # when possible. Fall back to Companies House/director details only if the
+    # account profile cannot be read.
+    registrant_info = get_existing_account_contact()
+    contacts_source = registrant_info.get("source", "existing_namecheap_account")
+    if "error" in registrant_info:
+        directors = details.get("directors", [])
+        if directors:
+            # CH format: "SURNAME, Firstname"
+            parts = directors[0]["name"].split(",", 1)
+            if len(parts) == 2:
+                last_name = parts[0].strip().title()
+                first_name = parts[1].strip().split()[0].title() if parts[1].strip() else "Director"
+            else:
+                name_parts = directors[0]["name"].split()
+                first_name = name_parts[0].title() if name_parts else "Director"
+                last_name = name_parts[-1].title() if len(name_parts) > 1 else "Director"
         else:
-            name_parts = directors[0]["name"].split()
-            first_name = name_parts[0].title() if name_parts else "Director"
-            last_name = name_parts[-1].title() if len(name_parts) > 1 else "Director"
-    else:
-        first_name = "Director"
-        last_name = "Director"
+            first_name = "Director"
+            last_name = "Director"
 
-    registrant_info = {
-        "FirstName": first_name,
-        "LastName": last_name,
-        "OrganizationName": company_name,
-        "Address1": details.get("address_line_1", "Companies House Default Address") or "Companies House Default Address",
-        "City": details.get("locality", "London") or "London",
-        "StateProvince": details.get("locality", "London") or "London",
-        "PostalCode": details.get("postal_code", "EC1A 1BB") or "EC1A 1BB",
-        "Country": "GB",
-        "Phone": "+44.2070001000",
-        "EmailAddress": f"admin@{domain}",
-    }
+        registrant_info = {
+            "FirstName": first_name,
+            "LastName": last_name,
+            "OrganizationName": company_name,
+            "Address1": details.get("address_line_1", "Companies House Default Address") or "Companies House Default Address",
+            "City": details.get("locality", "London") or "London",
+            "StateProvince": details.get("locality", "London") or "London",
+            "PostalCode": details.get("postal_code", "EC1A 1BB") or "EC1A 1BB",
+            "Country": "GB",
+            "Phone": "+44.2070001000",
+            "EmailAddress": f"admin@{domain}",
+        }
+        contacts_source = f"fallback_companies_house:{registrant_info.get('EmailAddress', '')}"
 
     reg_result = register_domain(domain, years=1, registrant_info=registrant_info)
     if "error" in reg_result:
@@ -365,8 +418,61 @@ def register_company_domain(company_name, details):
         "charged": reg_result.get("charged", ""),
         "domain_id": reg_result.get("domain_id", ""),
         "order_id": reg_result.get("order_id", ""),
+        "contacts_source": contacts_source,
         "alternatives": [a["domain"] for a in search_result.get("alternatives", [])],
     }
+
+
+def setup_play_console_domain_assets(result, google_txt_token="", google_txt_host="@"):
+    """
+    Prepare Namecheap-side Play Console assets for a company:
+      - dev@domain.com forwarding to the Gmail account owner
+      - pending/configured Google TXT DNS record metadata
+
+    This never interacts with Google. If no Google TXT token is supplied, DNS is
+    left unchanged and the dossier records token_pending.
+    """
+    from namecheap_automation import (
+        ensure_dev_email_forwarding,
+        prepare_google_txt_record,
+        set_default_dns,
+    )
+    from play_console_readiness import developer_email_for_domain
+
+    domain = (result.get("domain") or {}).get("domain", "")
+    account_email = (result.get("email") or {}).get("email", "")
+    developer_email = developer_email_for_domain(domain)
+
+    play = {
+        "developer_email": developer_email,
+        "developer_email_forwarding": {
+            "status": "missing_domain_or_forward_target",
+            "developer_email": developer_email,
+            "forward_to": account_email,
+        },
+        "google_txt": {
+            "status": "token_pending",
+            "hostname": google_txt_host or "@",
+            "value": google_txt_token or "",
+        },
+    }
+
+    if not domain or not account_email:
+        return play
+
+    dns_result = set_default_dns(domain)
+    play["namecheap_default_dns"] = dns_result
+
+    forwarding_result = ensure_dev_email_forwarding(domain, account_email)
+    play["developer_email_forwarding"] = forwarding_result
+
+    txt_result = prepare_google_txt_record(
+        domain,
+        txt_value=google_txt_token,
+        hostname=google_txt_host or "@",
+    )
+    play["google_txt"] = txt_result
+    return play
 
 
 # ============================================================
@@ -437,9 +543,12 @@ def _write_results_to_excel(all_results, output_path):
         "Date of Creation", "SIC Codes", "Address",
         "Directors", "Director Nationalities",
         "DUNS Number", "DUNS Status", "DUNS Email Used",
+        "D&B Legal Name", "D&B Address",
         "Certificate Downloaded", "Certificate Path",
         "Domain", "Domain Status", "Domain Cost",
         "Assigned Email", "Account Name",
+        "Developer Email", "Dev Email Forwarding", "Google TXT Status",
+        "Organization Phone", "Play Signup Missing",
     ]
     ws.append(headers)
 
@@ -456,6 +565,8 @@ def _write_results_to_excel(all_results, output_path):
         cert = r.get("certificate", {})
         domain = r.get("domain", {})
         email_info = r.get("email", {})
+        from play_console_readiness import build_readiness_record
+        readiness = build_readiness_record(r)
 
         ws.append([
             i,
@@ -471,6 +582,8 @@ def _write_results_to_excel(all_results, output_path):
             duns.get("duns_number", ""),
             duns.get("status", ""),
             duns.get("temp_email", ""),
+            duns.get("dnb_name", ""),
+            duns.get("dnb_address", ""),
             "Yes" if cert.get("path") else "No",
             cert.get("path", cert.get("error", "")),
             domain.get("domain", ""),
@@ -478,6 +591,11 @@ def _write_results_to_excel(all_results, output_path):
             domain.get("charged", ""),
             email_info.get("email", ""),
             email_info.get("account_name", ""),
+            readiness["developer_contact"]["public_developer_email"],
+            readiness["developer_contact"]["email_forwarding"]["status"],
+            readiness["dns_verification"]["status"],
+            readiness["organization"]["organization_phone"],
+            ", ".join(readiness["readiness"]["blocking_missing"]),
         ])
 
     for col in ws.columns:
@@ -493,8 +611,12 @@ def _write_results_to_excel(all_results, output_path):
 
     ws.freeze_panes = "A2"
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    from play_console_readiness import export_dossier, write_readiness_sheet
+    write_readiness_sheet(wb, all_results)
     wb.save(output_path)
+    dossier = export_dossier(all_results, PLAY_DOSSIER_DIR)
     print(f"\nExcel saved: {output_path} ({len(all_results)} total rows)")
+    print(f"Play Console dossier: {dossier['markdown']}")
 
 
 # ============================================================
@@ -535,9 +657,12 @@ def save_to_excel(results, output_path):
         "Date of Creation", "SIC Codes", "Address",
         "Directors", "Director Nationalities",
         "DUNS Number", "DUNS Status", "DUNS Email Used",
+        "D&B Legal Name", "D&B Address",
         "Certificate Downloaded", "Certificate Path",
         "Domain", "Domain Status", "Domain Cost",
         "Assigned Email", "Account Name",
+        "Developer Email", "Dev Email Forwarding", "Google TXT Status",
+        "Organization Phone", "Play Signup Missing",
     ]
     ws.append(headers)
 
@@ -558,6 +683,8 @@ def save_to_excel(results, output_path):
 
         domain = r.get("domain", {})
         email_info = r.get("email", {})
+        from play_console_readiness import build_readiness_record
+        readiness = build_readiness_record(r)
 
         ws.append([
             i,
@@ -573,6 +700,8 @@ def save_to_excel(results, output_path):
             duns.get("duns_number", ""),
             duns.get("status", ""),
             duns.get("temp_email", ""),
+            duns.get("dnb_name", ""),
+            duns.get("dnb_address", ""),
             "Yes" if cert.get("path") else "No",
             cert.get("path", cert.get("error", "")),
             domain.get("domain", ""),
@@ -580,6 +709,11 @@ def save_to_excel(results, output_path):
             domain.get("charged", ""),
             email_info.get("email", ""),
             email_info.get("account_name", ""),
+            readiness["developer_contact"]["public_developer_email"],
+            readiness["developer_contact"]["email_forwarding"]["status"],
+            readiness["dns_verification"]["status"],
+            readiness["organization"]["organization_phone"],
+            ", ".join(readiness["readiness"]["blocking_missing"]),
         ])
 
     # Auto-width columns
@@ -598,8 +732,12 @@ def save_to_excel(results, output_path):
     ws.freeze_panes = "A2"
 
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    from play_console_readiness import export_dossier, write_readiness_sheet
+    write_readiness_sheet(wb, all_results)
     wb.save(output_path)
+    dossier = export_dossier(all_results, PLAY_DOSSIER_DIR)
     print(f"\nExcel saved: {output_path} ({len(all_results)} total rows)")
+    print(f"Play Console dossier: {dossier['markdown']}")
     return output_path
 
 
@@ -607,45 +745,87 @@ def _load_existing_results(excel_path):
     """Load existing pipeline results from an Excel file."""
     import openpyxl
     wb = openpyxl.load_workbook(excel_path, read_only=True)
-    ws = wb.active
+    ws = wb["Companies Pipeline"] if "Companies Pipeline" in wb.sheetnames else wb.active
+    header = [str(c.value).strip() if c.value is not None else "" for c in ws[1]]
+    header_map = {name: idx for idx, name in enumerate(header)}
     rows = list(ws.iter_rows(min_row=2, values_only=True))  # skip header
     wb.close()
 
+    legacy = {
+        "Company Number": 1,
+        "Company Name": 2,
+        "Status": 3,
+        "Type": 4,
+        "Date of Creation": 5,
+        "SIC Codes": 6,
+        "Address": 7,
+        "Directors": 8,
+        "Director Nationalities": 9,
+        "DUNS Number": 10,
+        "DUNS Status": 11,
+        "DUNS Email Used": 12,
+        "Certificate Downloaded": 13,
+        "Certificate Path": 14,
+        "Domain": 15,
+        "Domain Status": 16,
+        "Domain Cost": 17,
+        "Assigned Email": 18,
+        "Account Name": 19,
+        "Developer Email": 20,
+        "Dev Email Forwarding": 21,
+        "Google TXT Status": 22,
+        "Organization Phone": 23,
+    }
+
+    def cell(row, name, default=""):
+        idx = header_map.get(name, legacy.get(name))
+        if idx is None or len(row) <= idx or row[idx] is None:
+            return default
+        return row[idx]
+
     results = []
     for row in rows:
-        if not row or not row[1]:  # no company number
+        if not row or not cell(row, "Company Number"):  # no company number
             continue
         results.append({
-            "company_number": str(row[1]),
+            "company_number": str(cell(row, "Company Number")),
             "details": {
-                "company_name": row[2] or "",
-                "company_status": row[3] or "",
-                "company_type": row[4] or "",
-                "date_of_creation": row[5] or "",
-                "sic_codes": row[6] or "",
-                "address": row[7] or "",
-                "director_names": row[8] or "",
-                "director_nationalities": row[9] or "",
+                "company_name": cell(row, "Company Name"),
+                "company_status": cell(row, "Status"),
+                "company_type": cell(row, "Type"),
+                "date_of_creation": cell(row, "Date of Creation"),
+                "sic_codes": cell(row, "SIC Codes"),
+                "address": cell(row, "Address"),
+                "director_names": cell(row, "Directors"),
+                "director_nationalities": cell(row, "Director Nationalities"),
             },
             "duns": {
-                "duns_number": row[10] or "",
-                "status": row[11] or "",
-                "temp_email": row[12] or "",
+                "duns_number": cell(row, "DUNS Number"),
+                "status": cell(row, "DUNS Status"),
+                "temp_email": cell(row, "DUNS Email Used"),
+                "dnb_name": cell(row, "D&B Legal Name"),
+                "dnb_address": cell(row, "D&B Address"),
             },
             "certificate": {
-                "path": row[14] if row[13] == "Yes" else "",
-                "status": "downloaded" if row[13] == "Yes" else "",
-                "error": row[14] if row[13] != "Yes" else "",
+                "path": cell(row, "Certificate Path") if cell(row, "Certificate Downloaded") == "Yes" else "",
+                "status": "downloaded" if cell(row, "Certificate Downloaded") == "Yes" else "",
+                "error": cell(row, "Certificate Path") if cell(row, "Certificate Downloaded") != "Yes" else "",
             },
             "domain": {
-                "domain": row[15] or "" if len(row) > 15 else "",
-                "status": row[16] or "" if len(row) > 16 else "",
-                "charged": row[17] or "" if len(row) > 17 else "",
+                "domain": cell(row, "Domain"),
+                "status": cell(row, "Domain Status"),
+                "charged": cell(row, "Domain Cost"),
             },
             "email": {
-                "email": row[18] or "" if len(row) > 18 else "",
-                "account_name": row[19] or "" if len(row) > 19 else "",
+                "email": cell(row, "Assigned Email"),
+                "account_name": cell(row, "Account Name"),
             },
+            "play_console": {
+                "developer_email": cell(row, "Developer Email"),
+                "developer_email_forwarding": {"status": cell(row, "Dev Email Forwarding")},
+                "google_txt": {"status": cell(row, "Google TXT Status")},
+            },
+            "phone": {"phone_number": cell(row, "Organization Phone")},
         })
     return results
 
@@ -662,12 +842,15 @@ def load_existing_company_numbers():
 # Main Pipeline
 # ============================================================
 
-def run_pipeline(count=1, nationality="kenyan", skip_duns=False, skip_cert=False, skip_domain=False, skip_email=False, headless=True):
+def run_pipeline(count=1, nationality="kenyan", skip_duns=False, skip_cert=False,
+                 skip_domain=False, skip_email=False, headless=True,
+                 google_txt_token="", google_txt_host="@"):
     """Run the full pipeline for `count` companies."""
     print("=" * 60)
     print(f"PIPELINE START - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print(f"Target: {count} companies | Nationality: {nationality}")
     print(f"DUNS: {'skip' if skip_duns else 'enabled'} | Cert: {'skip' if skip_cert else 'enabled'} | Domain: {'skip' if skip_domain else 'enabled'} | Email: {'skip' if skip_email else 'enabled'}")
+    print("Google: no browser/API automation; only local dossier + optional Namecheap TXT/forwarding")
     print("=" * 60)
 
     # Initialize email pool
@@ -741,6 +924,8 @@ def run_pipeline(count=1, nationality="kenyan", skip_duns=False, skip_cert=False
                     "duns_number": duns_result.get("duns_number"),
                     "status": duns_result.get("status", "unknown"),
                     "temp_email": duns_result.get("temp_email", ""),
+                    "dnb_name": duns_result.get("dnb_name") or duns_result.get("company_name", ""),
+                    "dnb_address": duns_result.get("dnb_address", ""),
                     "message": duns_result.get("message", ""),
                 }
                 if duns_result.get("duns_number"):
@@ -814,6 +999,23 @@ def run_pipeline(count=1, nationality="kenyan", skip_duns=False, skip_cert=False
                 print(f"    ERROR: {e}")
                 result["email"] = {"status": "error", "error": str(e)}
 
+        print(f"  [7/7] Preparing Play Console readiness record...")
+        try:
+            result["play_console"] = setup_play_console_domain_assets(
+                result,
+                google_txt_token=google_txt_token,
+                google_txt_host=google_txt_host,
+            )
+            dev_email = result["play_console"].get("developer_email", "")
+            fwd = result["play_console"].get("developer_email_forwarding", {}).get("status", "")
+            txt = result["play_console"].get("google_txt", {}).get("status", "")
+            print(f"    Developer email: {dev_email or 'missing domain'}")
+            print(f"    Dev forwarding: {fwd}")
+            print(f"    Google TXT: {txt}")
+        except Exception as e:
+            print(f"    ERROR: {e}")
+            result["play_console"] = {"status": "error", "error": str(e)}
+
         results.append(result)
 
     # Save to Excel
@@ -841,7 +1043,9 @@ def run_pipeline(count=1, nationality="kenyan", skip_duns=False, skip_cert=False
     return results
 
 
-def refill_pipeline(skip_duns=False, skip_cert=False, skip_domain=False, skip_email=False, headless=True):
+def refill_pipeline(skip_duns=False, skip_cert=False, skip_domain=False,
+                    skip_email=False, headless=True, google_txt_token="",
+                    google_txt_host="@"):
     """Re-process existing Excel entries that are missing details/DUNS/etc."""
     print("=" * 60)
     print(f"REFILL MODE - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
@@ -870,11 +1074,18 @@ def refill_pipeline(skip_duns=False, skip_cert=False, skip_domain=False, skip_em
     needs_duns = [r for r in existing if not skip_duns and r.get("details", {}).get("company_name") and not r.get("duns", {}).get("duns_number") and r.get("duns", {}).get("status") not in ("submitted",)]
     needs_cert = [r for r in existing if not skip_cert and r.get("details", {}).get("company_name") and not r.get("certificate", {}).get("path")]
     needs_email = [r for r in existing if not skip_email and r.get("details", {}).get("company_name") and not r.get("email", {}).get("email") and r.get("email", {}).get("status") != "skipped"]
+    needs_play = [
+        r for r in existing
+        if r.get("domain", {}).get("domain")
+        and r.get("email", {}).get("email")
+        and r.get("play_console", {}).get("developer_email_forwarding", {}).get("status") != "configured"
+    ]
 
     print(f"  Need details: {len(needs_details)}")
     print(f"  Need DUNS: {len(needs_duns)}")
     print(f"  Need certificates: {len(needs_cert)}")
     print(f"  Need email: {len(needs_email)}")
+    print(f"  Need Play Console Namecheap assets: {len(needs_play)}")
 
     updated = 0
 
@@ -901,6 +1112,8 @@ def refill_pipeline(skip_duns=False, skip_cert=False, skip_domain=False, skip_em
                 "duns_number": duns_result.get("duns_number"),
                 "status": duns_result.get("status", "unknown"),
                 "temp_email": duns_result.get("temp_email", ""),
+                "dnb_name": duns_result.get("dnb_name") or duns_result.get("company_name", ""),
+                "dnb_address": duns_result.get("dnb_address", ""),
             }
             if duns_result.get("duns_number"):
                 print(f"    DUNS: {duns_result['duns_number']}")
@@ -951,6 +1164,24 @@ def refill_pipeline(skip_duns=False, skip_cert=False, skip_domain=False, skip_em
         except Exception as e:
             print(f"    ERROR: {e}")
 
+    # Refill Play Console Namecheap assets
+    for i, r in enumerate(needs_play, 1):
+        cn = r["company_number"]
+        domain = r.get("domain", {}).get("domain", "")
+        print(f"\n  [{i}/{len(needs_play)}] Preparing Play Console assets for {cn} ({domain})...")
+        try:
+            r["play_console"] = setup_play_console_domain_assets(
+                r,
+                google_txt_token=google_txt_token,
+                google_txt_host=google_txt_host,
+            )
+            print(f"    Developer email: {r['play_console'].get('developer_email', '')}")
+            print(f"    Forwarding: {r['play_console'].get('developer_email_forwarding', {}).get('status')}")
+            print(f"    Google TXT: {r['play_console'].get('google_txt', {}).get('status')}")
+            updated += 1
+        except Exception as e:
+            print(f"    ERROR: {e}")
+
     if updated > 0:
         print(f"\n  Saving {updated} updates...")
         # Write directly - don't use save_to_excel which re-loads and merges
@@ -958,6 +1189,18 @@ def refill_pipeline(skip_duns=False, skip_cert=False, skip_domain=False, skip_em
     else:
         print("\n  Nothing to update.")
 
+    return existing
+
+
+def generate_play_console_dossier_only():
+    """Generate Play Console readiness workbook sheet + dossier from existing Excel only."""
+    if not os.path.exists(EXCEL_FILE):
+        print("No Excel file found. Run pipeline first.")
+        return None
+
+    existing = _load_existing_results(EXCEL_FILE)
+    print(f"Loaded {len(existing)} existing companies from {EXCEL_FILE}")
+    _write_results_to_excel(existing, EXCEL_FILE)
     return existing
 
 
@@ -971,17 +1214,24 @@ if __name__ == "__main__":
     parser.add_argument("--no-email", action="store_true", help="Skip email assignment")
     parser.add_argument("--headless", default="false", help="Browser headless mode (true/false). D&B blocks headless.")
     parser.add_argument("--refill", action="store_true", help="Re-process existing entries missing data")
+    parser.add_argument("--play-dossier-only", action="store_true", help="Only generate Play Console readiness sheet and dossier from existing Excel; no live APIs")
+    parser.add_argument("--google-txt-token", default="", help="Optional Google TXT token copied manually from Google; applied only to Namecheap DNS")
+    parser.add_argument("--google-txt-host", default="@", help="Hostname for Google TXT token, usually @")
 
     args = parser.parse_args()
     headless = args.headless.lower() != "false"
 
-    if args.refill:
+    if args.play_dossier_only:
+        generate_play_console_dossier_only()
+    elif args.refill:
         refill_pipeline(
             skip_duns=args.no_duns,
             skip_cert=args.no_cert,
             skip_domain=args.no_domain,
             skip_email=args.no_email,
             headless=headless,
+            google_txt_token=args.google_txt_token,
+            google_txt_host=args.google_txt_host,
         )
     else:
         run_pipeline(
@@ -992,4 +1242,6 @@ if __name__ == "__main__":
             skip_domain=args.no_domain,
             skip_email=args.no_email,
             headless=headless,
+            google_txt_token=args.google_txt_token,
+            google_txt_host=args.google_txt_host,
         )

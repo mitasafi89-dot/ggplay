@@ -8,9 +8,16 @@ API Docs: https://www.namecheap.com/support/api/methods/
 
 import os
 import re
-import requests
 import xml.etree.ElementTree as ET
-from dotenv import load_dotenv
+try:
+    import requests
+except ModuleNotFoundError:
+    requests = None
+try:
+    from dotenv import load_dotenv
+except ModuleNotFoundError:
+    def load_dotenv():
+        return False
 
 load_dotenv()
 
@@ -48,6 +55,8 @@ def _base_params():
 
 def _api_call(command, extra_params=None, method="GET"):
     """Make a Namecheap API call and return parsed XML root + status."""
+    if requests is None:
+        raise RuntimeError("The 'requests' package is required for live Namecheap API calls.")
     params = _base_params()
     params["Command"] = f"namecheap.{command}"
     if extra_params:
@@ -230,6 +239,113 @@ def register_domain(domain_name, years=1, registrant_info=None):
     return {"error": "Unexpected response format", "raw": resp["raw"]}
 
 
+def _node_name(node):
+    return node.tag.rsplit("}", 1)[-1]
+
+
+def _child_text(node, child_name, default=""):
+    for child in list(node):
+        if _node_name(child).lower() == child_name.lower():
+            return child.text or default
+    return default
+
+
+def get_address_list():
+    """Get saved Namecheap account address profiles."""
+    resp = _api_call("users.address.getList")
+    if resp["status"] != "OK":
+        return {"error": f"Failed: {resp['errors']}"}
+
+    addresses = []
+    for node in resp["root"].iter():
+        if "List" in _node_name(node) and node.attrib.get("AddressId"):
+            addresses.append({
+                "address_id": node.attrib.get("AddressId", ""),
+                "address_name": node.attrib.get("AddressName", ""),
+            })
+    return {"addresses": addresses, "count": len(addresses)}
+
+
+def get_address_info(address_id):
+    """Get a saved Namecheap account address profile by AddressId."""
+    resp = _api_call("users.address.getInfo", {"AddressId": str(address_id)})
+    if resp["status"] != "OK":
+        return {"error": f"Failed: {resp['errors']}"}
+
+    for node in resp["root"].iter():
+        if _node_name(node) == "GetAddressInfoResult":
+            return _contact_from_xml_node(node, source=f"users.address.getInfo:{address_id}")
+    return {"error": "Could not parse address info", "raw": resp["raw"]}
+
+
+def get_domain_contacts(domain_name):
+    """Get registrant/admin/tech/billing contacts for a domain in this account."""
+    resp = _api_call("domains.getContacts", {"DomainName": domain_name})
+    if resp["status"] != "OK":
+        return {"error": f"Failed: {resp['errors']}"}
+
+    contacts = {}
+    for node in resp["root"].iter():
+        name = _node_name(node)
+        if name in {"Registrant", "Admin", "Tech", "AuxBilling"}:
+            contacts[name] = _contact_from_xml_node(node, source=f"domains.getContacts:{domain_name}:{name}")
+
+    if not contacts:
+        return {"error": "Could not parse domain contacts", "raw": resp["raw"]}
+    return {"domain": domain_name, "contacts": contacts}
+
+
+def _contact_from_xml_node(node, source=""):
+    """Convert Namecheap contact XML into domains.create contact fields."""
+    return {
+        "FirstName": _child_text(node, "FirstName"),
+        "LastName": _child_text(node, "LastName"),
+        "OrganizationName": _child_text(node, "OrganizationName") or _child_text(node, "Organization"),
+        "JobTitle": _child_text(node, "JobTitle"),
+        "Address1": _child_text(node, "Address1"),
+        "Address2": _child_text(node, "Address2"),
+        "City": _child_text(node, "City"),
+        "StateProvince": _child_text(node, "StateProvince"),
+        "PostalCode": _child_text(node, "PostalCode") or _child_text(node, "Zip"),
+        "Country": _child_text(node, "Country") or "GB",
+        "Phone": _child_text(node, "Phone"),
+        "PhoneExt": _child_text(node, "PhoneExt"),
+        "EmailAddress": _child_text(node, "EmailAddress"),
+        "source": source,
+    }
+
+
+def get_existing_account_contact(reference_domain=None, address_id=None):
+    """
+    Get a Namecheap contact template from the existing account.
+
+    Priority:
+      1. explicit address_id or NAMECHEAP_DEFAULT_ADDRESS_ID
+      2. explicit reference_domain or NAMECHEAP_REFERENCE_DOMAIN
+      3. first saved address profile
+    """
+    address_id = address_id or os.getenv("NAMECHEAP_DEFAULT_ADDRESS_ID", "")
+    reference_domain = reference_domain or os.getenv("NAMECHEAP_REFERENCE_DOMAIN", "")
+
+    if address_id:
+        info = get_address_info(address_id)
+        if "error" not in info:
+            return info
+
+    if reference_domain:
+        contacts = get_domain_contacts(reference_domain)
+        if "error" not in contacts:
+            registrant = contacts.get("contacts", {}).get("Registrant")
+            if registrant:
+                return registrant
+
+    addresses = get_address_list()
+    if "error" in addresses or not addresses.get("addresses"):
+        return {"error": addresses.get("error", "No saved address profiles found")}
+    first = addresses["addresses"][0]["address_id"]
+    return get_address_info(first)
+
+
 def _split_domain(domain_name):
     """Split domain into SLD and TLD. Handles multi-part TLDs like .co.uk."""
     multi_tlds = [".co.uk", ".org.uk", ".me.uk", ".com.au", ".net.au",
@@ -348,6 +464,32 @@ def add_txt_record(domain_name, txt_value, hostname="@"):
     return set_dns_hosts(domain_name, hosts)
 
 
+def prepare_google_txt_record(domain_name, txt_value="", hostname="@"):
+    """
+    Apply a Google verification TXT record if a token is available.
+
+    If txt_value is blank, this returns a pending status and makes no DNS
+    changes. This keeps the pipeline Google-safe while still recording the
+    exact Namecheap action to run after a human obtains the token.
+    """
+    txt_value = (txt_value or "").strip()
+    hostname = (hostname or "@").strip()
+    if not txt_value:
+        return {
+            "status": "token_pending",
+            "domain": domain_name,
+            "hostname": hostname,
+            "value": "",
+            "message": "Paste Google's TXT token, then rerun DNS setup.",
+        }
+    result = add_txt_record(domain_name, txt_value, hostname=hostname)
+    if "error" in result:
+        result.update({"status": "error", "hostname": hostname, "value": txt_value})
+        return result
+    result.update({"status": "configured", "hostname": hostname, "value": txt_value})
+    return result
+
+
 def set_default_dns(domain_name):
     """Set domain to use Namecheap's default DNS servers (required for host records)."""
     sld, tld = _split_domain(domain_name)
@@ -364,16 +506,18 @@ def set_default_dns(domain_name):
 # EMAIL FORWARDING
 # ============================================================
 
-def set_email_forwarding(domain_name, mailbox, forward_to):
+def set_email_forwarding_rules(domain_name, rules):
     """
-    Set email forwarding: mailbox@domain -> forward_to.
-    e.g. set_email_forwarding("demanda.co.uk", "info", "your@gmail.com")
+    Set one or more email forwarding rules.
+
+    Namecheap treats setEmailForwarding as the complete forwarding set, so call
+    get_email_forwarding first and merge rules when preserving existing aliases.
     """
-    resp = _api_call("domains.dns.setEmailForwarding", {
-        "DomainName": domain_name,
-        "MailBox1": mailbox,
-        "ForwardTo1": forward_to,
-    })
+    params = {"DomainName": domain_name}
+    for i, rule in enumerate(rules, 1):
+        params[f"MailBox{i}"] = rule["mailbox"]
+        params[f"ForwardTo{i}"] = rule["forward_to"]
+    resp = _api_call("domains.dns.setEmailForwarding", params)
 
     if resp["status"] != "OK":
         return {"error": f"Failed: {resp['errors']}"}
@@ -383,10 +527,93 @@ def set_email_forwarding(domain_name, mailbox, forward_to):
             return {
                 "success": node.attrib.get("IsSuccess", "false").lower() == "true",
                 "domain": domain_name,
-                "forwarding": f"{mailbox}@{domain_name} -> {forward_to}",
+                "forwarding": [
+                    f"{r['mailbox']}@{domain_name} -> {r['forward_to']}"
+                    for r in rules
+                ],
             }
 
     return {"success": True, "domain": domain_name}
+
+
+def set_email_forwarding(domain_name, mailbox, forward_to):
+    """
+    Set email forwarding: mailbox@domain -> forward_to.
+    e.g. set_email_forwarding("demanda.co.uk", "info", "your@gmail.com")
+    """
+    return set_email_forwarding_rules(
+        domain_name,
+        [{"mailbox": mailbox, "forward_to": forward_to}],
+    )
+
+
+def get_email_forwarding(domain_name):
+    """Get current Namecheap email forwarding rules for a domain."""
+    resp = _api_call("domains.dns.getEmailForwarding", {"DomainName": domain_name})
+    if resp["status"] != "OK":
+        return {"error": f"Failed: {resp['errors']}"}
+
+    forwards = []
+    for node in resp["root"].iter():
+        if _node_name(node) == "Forward":
+            mailbox = node.attrib.get("mailbox", "")
+            forwards.append({
+                "mailbox": mailbox,
+                "address": node.text or "",
+            })
+    return {"domain": domain_name, "forwarding": forwards}
+
+
+def ensure_dev_email_forwarding(domain_name, forward_to):
+    """Create/confirm dev@domain -> forward_to forwarding."""
+    if not domain_name:
+        return {"status": "missing_domain", "error": "domain is required"}
+    if not forward_to:
+        return {"status": "missing_forward_target", "error": "forward_to is required"}
+
+    current = get_email_forwarding(domain_name)
+    if "error" not in current:
+        developer_email = f"dev@{domain_name}".lower()
+        target = forward_to.lower()
+        for item in current.get("forwarding", []):
+            if item.get("mailbox", "").lower() == "dev" and item.get("address", "").lower() == target:
+                return {
+                    "status": "configured",
+                    "success": True,
+                    "domain": domain_name,
+                    "developer_email": developer_email,
+                    "forward_to": forward_to,
+                    "message": "dev forwarding already present",
+                }
+
+    rules = []
+    if "error" not in current:
+        for item in current.get("forwarding", []):
+            mailbox = item.get("mailbox", "")
+            address = item.get("address", "")
+            if not mailbox or not address or mailbox.lower() == "dev":
+                continue
+            rules.append({"mailbox": mailbox, "forward_to": address})
+    rules.append({"mailbox": "dev", "forward_to": forward_to})
+
+    result = set_email_forwarding_rules(domain_name, rules)
+    if "error" in result:
+        return {
+            "status": "error",
+            "success": False,
+            "domain": domain_name,
+            "developer_email": f"dev@{domain_name}",
+            "forward_to": forward_to,
+            "error": result["error"],
+        }
+    return {
+        "status": "configured" if result.get("success") else "error",
+        "success": result.get("success", False),
+        "domain": domain_name,
+        "developer_email": f"dev@{domain_name}",
+        "forward_to": forward_to,
+        "message": "; ".join(result.get("forwarding", [])) if isinstance(result.get("forwarding"), list) else result.get("forwarding", ""),
+    }
 
 
 # ============================================================
