@@ -37,7 +37,7 @@ OUTPUT_DIR = os.path.join(ROOT, "pipeline_output", "apps")
 
 SDK_DIR_DEFAULT = os.environ.get(
     "ANDROID_HOME",
-    r"C:\Users\LENOVO\AppData\Local\Android\Sdk",
+    os.path.expanduser("~/Android/Sdk"),
 )
 
 
