@@ -1,7 +1,7 @@
 """
 Pipeline: Search Companies House -> Get company details -> Get DUNS -> Download certificate -> Register domain -> Assign email -> Save to Excel
 
-Certificates saved to: D:/Company Registrations/certificates/{Company Name}/
+Certificates saved to: ./certificates/{Company Name}/
 
 Usage:
     python run_pipeline.py                         # Test with first company only
@@ -37,7 +37,7 @@ API_KEY = os.getenv("COMPANIES_HOUSE_API_KEY")
 BASE_URL = "https://api.company-information.service.gov.uk"
 
 # Output paths
-BASE_DIR = os.path.dirname(__file__)  # D:\Company Registrations
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CERTS_BASE_DIR = os.path.join(BASE_DIR, "certificates")
 OUTPUT_DIR = os.path.join(BASE_DIR, "pipeline_output")
 EXCEL_FILE = os.path.join(OUTPUT_DIR, "companies_pipeline.xlsx")
