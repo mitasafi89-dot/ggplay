@@ -1,12 +1,9 @@
 """Load the company catalog from the processed pipeline Excel."""
-
 from __future__ import annotations
-
 import os
 import re
 from dataclasses import dataclass
 from typing import Iterable
-
 import openpyxl
 
 EXCEL_PATH_DEFAULT = os.path.join(
@@ -18,12 +15,12 @@ EXCEL_PATH_DEFAULT = os.path.join(
 # SIC code -> archetype. Only "shift" exists today; the rest are placeholders
 # for future archetype modules and currently fall back to "shift".
 SIC_ARCHETYPE = {
-    "78200": "shift",    # Temp employment agency
-    "88100": "shift",    # Social work without accommodation for the elderly/disabled
-    "87100": "shift",    # Residential nursing care
-    "53202": "shift",    # Courier (will become "mileage" when that archetype lands)
-    "49410": "shift",    # Freight road transport
-    "98000": "shift",    # Residents property mgmt (will become "twa" when that lands)
+    "78200": "shift",  # Temp employment agency
+    "88100": "shift",  # Social work without accommodation for the elderly/disabled
+    "87100": "shift",  # Residential nursing care
+    "53202": "shift",  # Courier (will become "mileage" when that archetype lands)
+    "49410": "shift",  # Freight road transport
+    "98000": "shift",  # Residents property mgmt (will become "twa" when that lands)
 }
 DEFAULT_ARCHETYPE = "shift"
 
@@ -36,6 +33,7 @@ class Company:
     domain: str
     support_email: str
     archetype: str
+    short_name: str = ""          # ← NEW: curated app name from Excel
 
     @property
     def flavor(self) -> str:
@@ -48,7 +46,13 @@ class Company:
 
     @property
     def display_name(self) -> str:
-        """Launcher label: title-cased name with trailing LTD/LIMITED stripped, 30-char cap."""
+        """Launcher label — prefers curated short_name; falls back to
+        title-cased company name with LTD/LIMITED stripped, 30-char cap."""
+        # ── Option 1: use the curated short name if present ──
+        if self.short_name:
+            return self.short_name[:30].rstrip()
+
+        # ── Fallback: auto-generate from company_name ──
         name = self.company_name.strip()
         name = re.sub(r"\s+(LTD|LIMITED|LLP|PLC)\.?$", "", name, flags=re.IGNORECASE)
         name = name.title()
@@ -71,16 +75,25 @@ def load_companies(
                 return i
         raise KeyError(f"column not found: {name}")
 
-    idx_num = col("Company Number")
-    idx_name = col("Company Name")
-    idx_sic = col("SIC Codes")
+    def col_optional(name: str) -> int | None:
+        """Return column index or None if the column doesn't exist yet."""
+        for i, h in enumerate(header):
+            if h and h.strip().lower() == name.lower():
+                return i
+        return None
+
+    idx_num   = col("Company Number")
+    idx_name  = col("Company Name")
+    idx_sic   = col("SIC Codes")
     idx_domain = col("Domain")
     idx_email = col("Assigned Email")
+    idx_short = col_optional("Short Name")  # ← NEW: optional column
 
     out: list[Company] = []
     for row in rows:
         if not row or not row[idx_num]:
             continue
+
         cn = str(row[idx_num]).strip()
         # Pad to 8 digits (Companies House format)
         if cn.isdigit() and len(cn) < 8:
@@ -91,8 +104,13 @@ def load_companies(
         archetype = SIC_ARCHETYPE.get(primary_sic, DEFAULT_ARCHETYPE)
 
         domain = (row[idx_domain] or "").strip() if row[idx_domain] else ""
-        email = (row[idx_email] or "").strip() if row[idx_email] else ""
+        email  = (row[idx_email] or "").strip() if row[idx_email] else ""
         support = f"support@{domain}" if domain else (email or "support@example.uk")
+
+        # ── Read the optional Short Name cell ──
+        short = ""
+        if idx_short is not None:
+            short = (row[idx_short] or "").strip() if row[idx_short] else ""
 
         out.append(Company(
             company_number=cn,
@@ -101,7 +119,9 @@ def load_companies(
             domain=domain,
             support_email=support,
             archetype=archetype,
+            short_name=short,                        # ← NEW
         ))
+
         if limit is not None and len(out) >= limit:
             break
 
@@ -110,10 +130,10 @@ def load_companies(
 
 
 def summarize(companies: Iterable[Company]) -> str:
-    lines = [f"{'#':>3}  {'Flavor':<12}  {'SIC':<6}  {'Arch':<6}  Name"]
+    lines = [f"{'#':>3} {'Flavor':<12} {'SIC':<6} {'Arch':<6} Name"]
     for i, c in enumerate(companies, 1):
         primary_sic = c.sic_codes.split(",")[0].strip() if c.sic_codes else "-"
-        lines.append(f"{i:>3}  {c.flavor:<12}  {primary_sic:<6}  {c.archetype:<6}  {c.display_name}")
+        lines.append(f"{i:>3} {c.flavor:<12} {primary_sic:<6} {c.archetype:<6} {c.display_name}")
     return "\n".join(lines)
 
 
