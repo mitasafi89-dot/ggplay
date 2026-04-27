@@ -13,6 +13,11 @@ load_dotenv()
 
 app = Flask(__name__, static_folder="static")
 
+# --- Wizard onboarding UI ---
+from wizard_routes import register_wizard_routes
+register_wizard_routes(app)
+
+
 API_KEY = os.getenv("COMPANIES_HOUSE_API_KEY")
 BASE_URL = "https://api.company-information.service.gov.uk"
 
