@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>GGPlay — Company Onboarding Wizard</title>
+  <title>GGPlay — Onboarding</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/static/style.css" />
@@ -12,164 +12,119 @@
   <div id="app">
     <header class="top-bar">
       <div class="logo">&#x1F680; <span>GGPlay</span></div>
-      <p class="tagline">Company Onboarding Pipeline &#x2014; Auto-Pilot Mode</p>
+      <p class="tagline">One click. Fully automated.</p>
     </header>
+
     <nav class="stepper" id="stepper">
-      <div class="step active" data-step="1"><span class="num">1</span> Search</div>
+      <div class="step active" data-step="1"><span class="num">1</span> Companies</div>
       <div class="step" data-step="2"><span class="num">2</span> Details</div>
       <div class="step" data-step="3"><span class="num">3</span> Branding</div>
-      <div class="step" data-step="4"><span class="num">4</span> Domain &amp; Email</div>
+      <div class="step" data-step="4"><span class="num">4</span> Domain</div>
       <div class="step" data-step="5"><span class="num">5</span> DUNS</div>
       <div class="step" data-step="6"><span class="num">6</span> Review</div>
     </nav>
 
+    <!-- ═══ STEP 1: COMPANIES FROM EXCEL ═══ -->
     <section class="panel active" id="panel-1">
-      <h2>Find a Company</h2>
-      <p class="hint">Search and click <strong>&#x26A1; Onboard</strong> &#x2014; everything else is automatic.</p>
-      <div class="form-row">
-        <div class="field grow">
-          <label for="searchQuery">Company Name</label>
-          <input id="searchQuery" type="text" placeholder="e.g. Swift Plus Personnel" />
-        </div>
-        <div class="field">
-          <label for="searchNat">Officer Nationality</label>
-          <select id="searchNat">
-            <option value="">Any</option>
-            <option value="kenyan" selected>Kenyan</option>
-            <option value="nigerian">Nigerian</option>
-            <option value="ghanaian">Ghanaian</option>
-            <option value="south african">South African</option>
-            <option value="indian">Indian</option>
-            <option value="pakistani">Pakistani</option>
-          </select>
-        </div>
-        <button class="btn primary" id="btnSearch">Search</button>
-      </div>
-      <div id="searchStatus" class="status-bar hidden"></div>
+      <h2>Pipeline Companies</h2>
+      <p class="hint">Loaded from Excel. Click <strong>&#x26A1; Onboard</strong> to auto-fill missing data (short name, domain, email, DUNS).</p>
+      <div id="loadStatus" class="status-bar info">Loading...</div>
       <div class="table-wrap">
-        <table id="searchResults" class="hidden">
-          <thead><tr><th>Company #</th><th>Name</th><th>Status</th><th>Created</th><th>Address</th><th></th></tr></thead>
+        <table id="companyTable">
+          <thead><tr><th>#</th><th>Company Name</th><th>Short Name</th><th>Domain</th><th>DUNS</th><th></th></tr></thead>
           <tbody></tbody>
         </table>
       </div>
+      <!-- AUTOPILOT PANEL -->
       <div id="autopilotSection" class="hidden" style="margin-top:1.5rem">
         <div class="card ap-card">
-          <h3>&#x26A1; Auto-Populating&#x2026;</h3>
+          <div class="ap-header"><h3>&#x26A1; Auto-populating&#x2026;</h3><div class="progress-track"><div class="progress-fill" id="apProgressBar"></div></div></div>
           <div id="autopilotLog" class="ap-log"></div>
-          <div class="nav-buttons" style="margin-top:1rem">
-            <span></span>
-            <button class="btn primary large hidden" id="apReviewBtn" onclick="goStep(6)">Go to Review &#x2192;</button>
-          </div>
         </div>
       </div>
     </section>
 
+    <!-- ═══ STEP 2: DETAILS ═══ -->
     <section class="panel" id="panel-2">
       <h2>Company Details</h2>
-      <p class="hint">Auto-populated from Companies House. Edit if needed.</p>
+      <p class="hint">From Excel. Edit if needed.</p>
       <div class="card detail-grid">
-        <div class="field"><label>Company Number</label><input id="dCompanyNumber" type="text" readonly /></div>
-        <div class="field"><label>Company Name</label><input id="dCompanyName" type="text" /></div>
+        <div class="field"><label>Company #</label><input id="dCompanyNumber" type="text" readonly /></div>
+        <div class="field"><label>Name</label><input id="dCompanyName" type="text" /></div>
         <div class="field"><label>Status</label><input id="dStatus" type="text" readonly /></div>
-        <div class="field"><label>Company Type</label><input id="dType" type="text" readonly /></div>
-        <div class="field"><label>Date of Creation</label><input id="dCreated" type="text" readonly /></div>
+        <div class="field"><label>Type</label><input id="dType" type="text" readonly /></div>
+        <div class="field"><label>Created</label><input id="dCreated" type="text" readonly /></div>
         <div class="field"><label>SIC Codes</label><input id="dSIC" type="text" /></div>
-        <div class="field span-2"><label>Registered Address</label><input id="dAddress" type="text" /></div>
+        <div class="field span-2"><label>Address</label><input id="dAddress" type="text" /></div>
         <div class="field span-2"><label>Directors</label><textarea id="dDirectors" rows="2" readonly></textarea></div>
-        <div class="field span-2"><label>Director Nationalities</label><input id="dNationalities" type="text" readonly /></div>
+        <div class="field span-2"><label>Nationalities</label><input id="dNationalities" type="text" readonly /></div>
       </div>
-      <div class="nav-buttons">
-        <button class="btn ghost" onclick="goStep(1)">&#x2190; Back</button>
-        <button class="btn primary" onclick="goStep(3)">Next &#x2192;</button>
-      </div>
+      <div class="nav-buttons"><button class="btn ghost" onclick="goStep(1)">&#x2190; Back</button><button class="btn primary" onclick="goStep(6)">Review &#x2192;</button></div>
     </section>
 
+    <!-- ═══ STEP 3: BRANDING ═══ -->
     <section class="panel" id="panel-3">
       <h2>App Branding</h2>
-      <p class="hint">Auto-generated. Adjust the short name if you'd like.</p>
+      <p class="hint">Auto-generated. Tweak if needed.</p>
       <div class="card brand-section">
         <div class="brand-left">
-          <div class="field"><label for="bShortName">Short Name (App Launcher Label)</label><input id="bShortName" type="text" maxlength="30" placeholder="Auto-generated" /><small id="bNameCount">0 / 30</small></div>
-          <div class="field"><label>Fallback Name</label><input id="bAutoName" type="text" readonly class="muted" /></div>
-          <div class="field"><label>Application ID</label><input id="bAppId" type="text" readonly class="muted" /></div>
+          <div class="field"><label for="bShortName">Short Name</label><input id="bShortName" type="text" maxlength="30" /><small id="bNameCount">0 / 30</small></div>
+          <div class="field"><label>Fallback</label><input id="bAutoName" type="text" readonly class="muted" /></div>
+          <div class="field"><label>App ID</label><input id="bAppId" type="text" readonly class="muted" /></div>
           <div class="field"><label>Archetype</label><input id="bArchetype" type="text" readonly class="muted" /></div>
         </div>
         <div class="brand-right">
           <h3>Preview</h3>
-          <div class="palette-preview" id="palettePreview">
-            <div class="swatch" id="swPrimary"><span>Primary</span></div>
-            <div class="swatch" id="swPrimaryDark"><span>Dark</span></div>
-            <div class="swatch" id="swAccent"><span>Accent</span></div>
-          </div>
-          <div class="icon-preview" id="iconPreview">
-            <div class="fake-icon" id="fakeIcon"><span id="iconInitials">SP</span></div>
-            <p id="iconLabel">App Name</p>
-          </div>
+          <div class="palette-preview"><div class="swatch" id="swPrimary"><span>Primary</span></div><div class="swatch" id="swPrimaryDark"><span>Dark</span></div><div class="swatch" id="swAccent"><span>Accent</span></div></div>
+          <div class="icon-preview"><div class="fake-icon" id="fakeIcon"><span id="iconInitials">SP</span></div><p id="iconLabel">App</p></div>
         </div>
       </div>
-      <div class="nav-buttons">
-        <button class="btn ghost" onclick="goStep(2)">&#x2190; Back</button>
-        <button class="btn primary" onclick="goStep(4)">Next &#x2192;</button>
-      </div>
+      <div class="nav-buttons"><button class="btn ghost" onclick="goStep(2)">&#x2190; Back</button><button class="btn primary" onclick="goStep(6)">Review &#x2192;</button></div>
     </section>
 
+    <!-- ═══ STEP 4: DOMAIN & EMAIL ═══ -->
     <section class="panel" id="panel-4">
       <h2>Domain &amp; Email</h2>
-      <p class="hint">Auto-assigned. Change if needed.</p>
+      <p class="hint">Auto-assigned. Override if needed.</p>
       <div class="card">
-        <div class="form-row">
-          <div class="field grow"><label for="domainInput">Domain</label><input id="domainInput" type="text" placeholder="e.g. swiftplus.co.uk" /></div>
-          <button class="btn secondary" id="btnCheckDomain">Check</button>
-        </div>
+        <div class="form-row"><div class="field grow"><label>Domain</label><input id="domainInput" type="text" /></div><button class="btn secondary" id="btnCheckDomain">Check</button></div>
         <div id="domainStatus" class="status-bar hidden"></div>
-        <div class="domain-suggestions hidden" id="domainSuggestions"><h4>Alternatives</h4><div class="chip-list" id="domainChips"></div></div>
         <hr />
         <div class="form-row">
-          <div class="field grow"><label for="emailSelect">Developer Email</label><select id="emailSelect"><option value="">&#x2014; Auto-assigned from pool &#x2014;</option></select></div>
-          <div class="field grow"><label for="emailManual">Or manual</label><input id="emailManual" type="email" placeholder="dev@example.com" /></div>
+          <div class="field grow"><label>Developer Email</label><select id="emailSelect"><option value="">&#x2014; auto &#x2014;</option></select></div>
+          <div class="field grow"><label>Or manual</label><input id="emailManual" type="email" placeholder="dev@example.com" /></div>
         </div>
-        <div class="field" style="margin-top:.75rem"><label for="supportEmail">Support Email</label><input id="supportEmail" type="email" readonly class="muted" /></div>
+        <div class="field" style="margin-top:.75rem"><label>Support Email</label><input id="supportEmail" type="email" readonly class="muted" /></div>
       </div>
-      <div class="nav-buttons">
-        <button class="btn ghost" onclick="goStep(3)">&#x2190; Back</button>
-        <button class="btn primary" onclick="goStep(5)">Next &#x2192;</button>
-      </div>
+      <div class="nav-buttons"><button class="btn ghost" onclick="goStep(3)">&#x2190; Back</button><button class="btn primary" onclick="goStep(6)">Review &#x2192;</button></div>
     </section>
 
+    <!-- ═══ STEP 5: DUNS ═══ -->
     <section class="panel" id="panel-5">
       <h2>DUNS Number</h2>
-      <p class="hint">Auto-looked up. Enter manually or request if not found.</p>
+      <p class="hint">Auto-looked up. Request if not found.</p>
       <div class="card">
-        <div class="form-row">
-          <div class="field grow"><label for="dunsNumber">DUNS Number</label><input id="dunsNumber" type="text" placeholder="Auto-filled or enter manually" /></div>
-          <button class="btn secondary" id="btnDunsLookup">&#x1F50D; Lookup</button>
-          <button class="btn secondary" id="btnDunsRequest">&#x1F4E8; Request</button>
-        </div>
+        <div class="form-row"><div class="field grow"><label>DUNS</label><input id="dunsNumber" type="text" /></div><button class="btn secondary" id="btnDunsLookup">&#x1F50D; Lookup</button><button class="btn secondary" id="btnDunsRequest">&#x1F4E8; Request</button></div>
         <div id="dunsStatus" class="status-bar hidden"></div>
         <div class="form-row" style="margin-top:1rem">
-          <div class="field grow"><label for="dunsEmail">D&amp;B Email</label><input id="dunsEmail" type="email" placeholder="Auto-filled from pool" /></div>
-          <div class="field"><label for="dunsFirst">First Name</label><input id="dunsFirst" type="text" placeholder="From director" /></div>
-          <div class="field"><label for="dunsLast">Last Name</label><input id="dunsLast" type="text" placeholder="From director" /></div>
+          <div class="field grow"><label>D&amp;B Email</label><input id="dunsEmail" type="email" /></div>
+          <div class="field"><label>First</label><input id="dunsFirst" type="text" /></div>
+          <div class="field"><label>Last</label><input id="dunsLast" type="text" /></div>
         </div>
       </div>
-      <div class="nav-buttons">
-        <button class="btn ghost" onclick="goStep(4)">&#x2190; Back</button>
-        <button class="btn primary" onclick="goStep(6)">Next &#x2192;</button>
-      </div>
+      <div class="nav-buttons"><button class="btn ghost" onclick="goStep(4)">&#x2190; Back</button><button class="btn primary" onclick="goStep(6)">Review &#x2192;</button></div>
     </section>
 
+    <!-- ═══ STEP 6: REVIEW ═══ -->
     <section class="panel" id="panel-6">
-      <h2>Review &amp; Submit</h2>
-      <p class="hint">Everything auto-populated. Edit any step above if needed, or submit directly.</p>
+      <h2>Review &amp; Save</h2>
+      <p class="hint">All auto-filled. Click any step to edit, or save now.</p>
       <div class="card review-card"><table class="review-table" id="reviewTable"><tbody></tbody></table></div>
       <div id="submitStatus" class="status-bar hidden"></div>
-      <div class="nav-buttons">
-        <button class="btn ghost" onclick="goStep(1)">&#x2190; Back to Search</button>
-        <button class="btn primary large" id="btnSubmit">&#x2705; Add to Pipeline</button>
-      </div>
+      <div class="nav-buttons"><button class="btn ghost" onclick="goStep(1)">&#x2190; Companies</button><button class="btn primary large" id="btnSubmit">&#x2705; Save to Pipeline</button></div>
     </section>
 
-    <footer class="bottom-bar"><p>GGPlay Pipeline &#x00B7; <span id="footYear"></span></p></footer>
+    <footer class="bottom-bar"><p>GGPlay &#x00B7; <span id="footYear"></span></p></footer>
   </div>
   <script src="/static/wizard.js"></script>
 </body>
