@@ -11,7 +11,7 @@ import shutil
 import subprocess
 import sys
 
-SDK_DIR = os.environ.get("ANDROID_HOME", r"C:\Users\LENOVO\AppData\Local\Android\Sdk")
+SDK_DIR = os.environ.get("ANDROID_HOME", os.path.expanduser("~/Android/Sdk"))
 BUILD_TOOLS_DIR = os.path.join(SDK_DIR, "build-tools")
 
 
