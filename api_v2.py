@@ -1,0 +1,668 @@
+"""
+Per-company stage control API — v2.
+Register with:  from api_v2 import api_v2; app.register_blueprint(api_v2)
+"""
+from __future__ import annotations
+
+import io, json, os, re, shutil, sys, threading, traceback
+from datetime import datetime
+from pathlib import Path
+
+import openpyxl
+from flask import Blueprint, jsonify, request, send_file, abort
+
+api_v2 = Blueprint("api_v2", __name__)
+
+ROOT     = Path(__file__).parent
+EXCEL    = ROOT / "pipeline_output" / "companies_pipeline.xlsx"
+COMP_DIR = ROOT / "pipeline_output" / "companies"
+DL_BASE  = ROOT / "pipeline_output"          # files must be under here to download
+
+STAGE_ORDER = ["details", "duns", "certificate", "domain", "email", "director_id", "app"]
+
+# ── Job state ──────────────────────────────────────────────────────────────
+_JOBS: dict[str, dict] = {}   # key: "{cn8}:{stage}"
+_LOCK = threading.Lock()
+_CO_LOCKS: dict[str, threading.Lock] = {}   # per-company serialisation
+
+
+def _co_lock(cn: str) -> threading.Lock:
+    with _LOCK:
+        if cn not in _CO_LOCKS:
+            _CO_LOCKS[cn] = threading.Lock()
+        return _CO_LOCKS[cn]
+
+
+def _jk(cn: str, stage: str) -> str:
+    return f"{cn}:{stage}"
+
+
+def _job_get(cn: str, stage: str) -> dict:
+    with _LOCK:
+        j = dict(_JOBS.get(_jk(cn, stage), {}))
+    cap = j.pop("_cap", None)
+    if cap:
+        j["log"] = cap.get_log()
+    return j
+
+
+def _job_set(cn: str, stage: str, **kw) -> None:
+    with _LOCK:
+        _JOBS.setdefault(_jk(cn, stage), {}).update(kw)
+
+
+# ── Stdout capture ─────────────────────────────────────────────────────────
+
+class _Tee:
+    def __init__(self):
+        self._real = sys.__stdout__
+        self._buf: list[str] = []
+        self._mu = threading.Lock()
+
+    def write(self, s: str) -> int:
+        if s:
+            try: self._real.write(s); self._real.flush()
+            except Exception: pass
+            with self._mu: self._buf.append(s)
+        return len(s) if s else 0
+
+    def flush(self):
+        try: self._real.flush()
+        except Exception: pass
+
+    def get_log(self) -> str:
+        with self._mu: return "".join(self._buf)
+
+
+def _spawn(cn: str, stage: str, fn) -> None:
+    """Run fn() in a daemon thread, tracking job state and capturing stdout."""
+    cap = _Tee()
+    _job_set(cn, stage, status="running", started_at=datetime.now().isoformat(),
+             finished_at=None, error=None, log=None, _cap=cap)
+
+    def _worker():
+        old = sys.stdout
+        sys.stdout = cap
+        try:
+            result = fn()
+            sys.stdout = old
+            _job_set(cn, stage, status="done",
+                     finished_at=datetime.now().isoformat(),
+                     log=cap.get_log(), _cap=None, result=str(result)[:500])
+        except Exception as e:
+            sys.stdout = old
+            _job_set(cn, stage, status="failed",
+                     finished_at=datetime.now().isoformat(),
+                     error=str(e), log=cap.get_log() + "\n" + traceback.format_exc(),
+                     _cap=None)
+
+    threading.Thread(target=_worker, daemon=True).start()
+
+
+# ── Excel helpers ──────────────────────────────────────────────────────────
+
+def _cn8(v) -> str:
+    return str(v or "").strip().zfill(8)
+
+
+def _safe(name: str) -> str:
+    return re.sub(r'[\\/:*?"<>|]', "", name).strip()
+
+
+def _co_dir(cn: str, name: str = "") -> Path:
+    folder = f"{_cn8(cn)} - {_safe(name)}" if name else _cn8(cn)
+    return COMP_DIR / folder
+
+
+def _all_rows() -> list[dict]:
+    if not EXCEL.exists():
+        return []
+    try:
+        wb = openpyxl.load_workbook(EXCEL, data_only=True)
+        ws = wb.active
+        hdr = [str(c.value or "").strip() for c in ws[1]]
+        rows = []
+        for row in ws.iter_rows(min_row=2, values_only=True):
+            if not row or not row[0]: continue
+            rows.append({hdr[i]: (row[i] if i < len(row) else None) for i in range(len(hdr))})
+        wb.close()
+        return rows
+    except Exception:
+        return []
+
+
+def _find_row(cn: str) -> dict | None:
+    for r in _all_rows():
+        if _cn8(r.get("Company Number")) == _cn8(cn):
+            return r
+    return None
+
+
+def _update_excel_row(cn: str, updates: dict) -> None:
+    if not EXCEL.exists(): return
+    try:
+        wb = openpyxl.load_workbook(EXCEL)
+        ws = wb.active
+        hdr = [str(c.value or "").strip() for c in ws[1]]
+
+        def _col(name: str) -> int:
+            for i, h in enumerate(hdr):
+                if h.lower() == name.lower(): return i + 1
+            nc = len(hdr) + 1
+            ws.cell(row=1, column=nc, value=name)
+            hdr.append(name)
+            return nc
+
+        cn_idx = next((i for i, h in enumerate(hdr) if h.lower() == "company number"), None)
+        if cn_idx is None: wb.close(); return
+
+        for row in ws.iter_rows(min_row=2):
+            if _cn8(row[cn_idx].value) == _cn8(cn):
+                for k, v in updates.items():
+                    ws.cell(row=row[cn_idx].row, column=_col(k), value=v)
+                break
+
+        wb.save(EXCEL)
+        wb.close()
+    except Exception as e:
+        print(f"  [excel-update] {e}")
+
+
+def _add_company_row(cn: str, name: str) -> None:
+    """Insert a new row for a company that isn't in Excel yet."""
+    if not EXCEL.exists():
+        os.makedirs(EXCEL.parent, exist_ok=True)
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = "Companies Pipeline"
+        from openpyxl.styles import Font, PatternFill, Alignment
+        headers = [
+            "No.", "Company Number", "Company Name", "Status", "Type",
+            "Date of Creation", "SIC Codes", "Address",
+            "Directors", "Director Nationalities", "Director DOB", "Director Gender",
+            "Buvei First Name", "Buvei Last Name",
+            "DUNS Number", "DUNS Status", "DUNS Email Used",
+            "Certificate Downloaded", "Certificate Path",
+            "Domain", "Domain Status", "Domain Cost",
+            "Assigned Email", "Account Name",
+        ]
+        ws.append(headers)
+        fill = PatternFill(start_color="003078", end_color="003078", fill_type="solid")
+        font = Font(color="FFFFFF", bold=True, size=11)
+        for cell in ws[1]:
+            cell.fill = fill; cell.font = font
+        wb.save(EXCEL)
+        wb.close()
+
+    wb = openpyxl.load_workbook(EXCEL)
+    ws = wb.active
+    hdr = [str(c.value or "").strip() for c in ws[1]]
+
+    # Check duplicate
+    cn_idx = next((i for i, h in enumerate(hdr) if h.lower() == "company number"), None)
+    if cn_idx is not None:
+        for row in ws.iter_rows(min_row=2, values_only=True):
+            if row and _cn8(row[cn_idx]) == _cn8(cn):
+                wb.close(); return  # already exists
+
+    def col(name):
+        for i, h in enumerate(hdr):
+            if h.lower() == name.lower(): return i + 1
+        return None
+
+    nr = ws.max_row + 1
+    no = nr - 1
+    if col("No."): ws.cell(row=nr, column=col("No."), value=no)
+    if col("Company Number"): ws.cell(row=nr, column=col("Company Number"), value=cn)
+    if col("Company Name"): ws.cell(row=nr, column=col("Company Name"), value=name)
+
+    wb.save(EXCEL)
+    wb.close()
+
+
+# ── Stage status ───────────────────────────────────────────────────────────
+
+def _compute_stages(cn: str, row: dict) -> dict:
+    name  = str(row.get("Company Name") or "")
+    cdir  = _co_dir(cn, name)
+
+    has_cert = bool(row.get("Certificate Downloaded"))
+    if not has_cert:
+        cd = cdir / "certificate"
+        has_cert = cd.is_dir() and any(f.endswith("_cert.pdf") for f in os.listdir(cd))
+
+    ad = cdir / "app" / "artifacts"
+    has_app = ad.is_dir() and any(f.endswith((".apk", ".aab")) for f in os.listdir(ad))
+
+    return {
+        "details":     bool(name),
+        "duns":        bool(row.get("DUNS Number")),
+        "certificate": has_cert,
+        "domain":      bool(row.get("Domain")),
+        "email":       bool(row.get("Assigned Email")),
+        "director_id": (cdir / "director_id" / "ID Front.jpeg").exists(),
+        "app":         has_app,
+    }
+
+
+# ── File helpers ───────────────────────────────────────────────────────────
+
+def _ls(d: Path, exts: list | None = None, names: list | None = None) -> list[dict]:
+    if not d.is_dir(): return []
+    out = []
+    for f in sorted(d.rglob("*")):
+        if not f.is_file(): continue
+        rel = f.relative_to(d).as_posix()
+        if exts and not any(rel.lower().endswith(e) for e in exts): continue
+        if names and f.name not in names: continue
+        out.append({"name": rel, "size": f.stat().st_size, "path": str(f)})
+    return out
+
+
+def _pp(cdir: Path) -> dict | None:
+    for p in [cdir / "payment_profile" / "payment_profile.txt", cdir / "payment_profile.txt"]:
+        if p.exists():
+            return {"name": "payment_profile.txt", "size": p.stat().st_size, "path": str(p)}
+    return None
+
+
+def _version_file(cn: str, name: str) -> Path:
+    return _co_dir(cn, name) / "app" / "version.json"
+
+
+def _read_version(cn: str, name: str) -> dict:
+    vf = _version_file(cn, name)
+    if vf.exists():
+        try:
+            return json.loads(vf.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+    return {"version_code": 1, "version_name": "1.0"}
+
+
+def _write_version(cn: str, name: str, version_code: int, version_name: str) -> None:
+    vf = _version_file(cn, name)
+    vf.parent.mkdir(parents=True, exist_ok=True)
+    vf.write_text(
+        json.dumps({"version_code": version_code, "version_name": version_name}, indent=2),
+        encoding="utf-8",
+    )
+
+
+def _rmdir(path: Path) -> None:
+    """Remove a directory and all its contents, silently."""
+    try:
+        if path.is_dir():
+            shutil.rmtree(path)
+    except Exception as e:
+        print(f"  [rmdir] {path}: {e}")
+
+
+def _clean_stage_output(cn: str, name: str, stage: str) -> None:
+    """Delete prior output files for a stage before re-running it."""
+    cdir = _co_dir(cn, name)
+    if stage == "certificate":
+        _rmdir(cdir / "certificate")
+    elif stage == "director_id":
+        _rmdir(cdir / "director_id")
+    elif stage == "app":
+        arts = cdir / "app" / "artifacts"
+        if arts.is_dir():
+            for f in arts.iterdir():
+                if f.suffix in {".apk", ".aab"}:
+                    try: f.unlink()
+                    except Exception: pass
+
+
+def _tree(path: Path) -> dict | None:
+    """Return a nested tree dict for path. Dirs first, then files, both sorted by name."""
+    if not path.exists():
+        return None
+    if path.is_file():
+        return {"name": path.name, "type": "file",
+                "size": path.stat().st_size, "path": str(path)}
+    children: list[dict] = []
+    try:
+        for child in sorted(path.iterdir(),
+                            key=lambda p: (p.is_file(), p.name.lower())):
+            node = _tree(child)
+            if node:
+                children.append(node)
+    except PermissionError:
+        pass
+    return {"name": path.name, "type": "dir", "children": children}
+
+
+# ── Core stage executor ────────────────────────────────────────────────────
+
+def _exec_stage(cn: str, stage: str, row: dict):
+    """Execute one stage. Called from thread. stdout already redirected."""
+    name = str(row.get("Company Name") or "")
+    sys.path.insert(0, str(ROOT))
+
+    if stage == "details":
+        from run_pipeline import get_company_details
+        d = get_company_details(cn)
+        _update_excel_row(cn, {
+            "Company Name":           d.get("company_name", ""),
+            "Status":                 d.get("company_status", ""),
+            "Type":                   d.get("type", ""),
+            "Date of Creation":       d.get("date_of_incorporation", ""),
+            "SIC Codes":              d.get("sic_codes", ""),
+            "Address":                d.get("address", ""),
+            "Directors":              d.get("director_names", ""),
+            "Director Nationalities": d.get("director_nationalities", ""),
+            "Director DOB":           d.get("director_dobs", ""),
+            "Director Gender":        d.get("director_genders", ""),
+        })
+        return d
+
+    elif stage == "duns":
+        from run_pipeline import get_duns_number
+        r = get_duns_number(cn, headless=True)
+        if r.get("duns_number"):
+            _update_excel_row(cn, {"DUNS Number": r["duns_number"], "DUNS Status": "found"})
+        elif r.get("status") == "submitted":
+            _update_excel_row(cn, {"DUNS Status": "submitted",
+                                   "DUNS Email Used": r.get("temp_email", "")})
+        return r
+
+    elif stage == "certificate":
+        _clean_stage_output(cn, name, "certificate")
+        from run_pipeline import download_certificate, _company_dir
+        out = os.path.join(_company_dir(cn, name), "certificate")
+        path, err = download_certificate(cn, out)
+        if path:
+            _update_excel_row(cn, {"Certificate Downloaded": True, "Certificate Path": path})
+        return {"path": path, "error": err}
+
+    elif stage == "domain":
+        from run_pipeline import register_company_domain
+        details = {
+            "company_name": name, "company_number": cn,
+            "sic_codes": str(row.get("SIC Codes") or ""),
+            "address": str(row.get("Address") or ""),
+        }
+        r = register_company_domain(name, details)
+        if r.get("domain"):
+            _update_excel_row(cn, {"Domain": r["domain"],
+                                   "Domain Status": r.get("status", ""),
+                                   "Domain Cost": r.get("charged", "")})
+        return r
+
+    elif stage == "email":
+        from email_pool import EmailPool
+        pool = EmailPool()
+        ex = pool.get_assigned_email(cn)
+        if ex:
+            return {"email": ex, "status": "already_assigned"}
+        email, first, last = pool.assign_next(company_number=cn, company_name=name)
+        _update_excel_row(cn, {"Assigned Email": email,
+                                "Account Name": f"{first} {last}"})
+        return {"email": email, "status": "assigned"}
+
+    elif stage == "director_id":
+        _clean_stage_output(cn, name, "director_id")
+        import pipeline as _pl
+        _pl.stage_director_id(company_numbers=[cn])
+        return {"status": "done"}
+
+    elif stage == "app":
+        _clean_stage_output(cn, name, "app")
+        import pipeline as _pl
+        _pl.stage_build(company_numbers=[cn])
+        return {"status": "done"}
+
+    raise ValueError(f"Unknown stage: {stage}")
+
+
+# ── Routes ─────────────────────────────────────────────────────────────────
+
+@api_v2.route("/app")
+def app_page():
+    return send_file(ROOT / "static" / "app.html")
+
+
+@api_v2.route("/api/v2/companies")
+def v2_companies():
+    rows = _all_rows()
+    out = []
+    for row in rows:
+        cn = _cn8(row.get("Company Number"))
+        if not cn or cn == "00000000": continue
+        stages = _compute_stages(cn, row)
+        running = [s for s in STAGE_ORDER if _job_get(cn, s).get("status") == "running"]
+        out.append({
+            "cn":      cn,
+            "name":    str(row.get("Company Name") or ""),
+            "domain":  str(row.get("Domain") or ""),
+            "stages":  stages,
+            "n_done":  sum(stages.values()),
+            "running": running,
+        })
+    return jsonify(out)
+
+
+@api_v2.route("/api/v2/company/<cn>")
+def v2_company(cn):
+    row = _find_row(cn)
+    if not row:
+        return jsonify({"error": "Not found"}), 404
+
+    name  = str(row.get("Company Name") or "")
+    cdir  = _co_dir(cn, name)
+    stages = _compute_stages(cn, row)
+
+    jobs = {}
+    for s in STAGE_ORDER:
+        j = _job_get(cn, s)
+        if j: jobs[s] = {k: v for k, v in j.items() if k != "log"}
+
+    return jsonify({
+        "cn":            cn,
+        "name":          name,
+        "status":        str(row.get("Status") or ""),
+        "type":          str(row.get("Type") or ""),
+        "sic":           str(row.get("SIC Codes") or ""),
+        "address":       str(row.get("Address") or ""),
+        "directors":     str(row.get("Directors") or ""),
+        "nationalities": str(row.get("Director Nationalities") or ""),
+        "dobs":          str(row.get("Director DOB") or ""),
+        "genders":       str(row.get("Director Gender") or ""),
+        "buvei_first":   str(row.get("Buvei First Name") or ""),
+        "buvei_last":    str(row.get("Buvei Last Name") or ""),
+        "duns":          str(row.get("DUNS Number") or ""),
+        "domain":        str(row.get("Domain") or ""),
+        "email":         str(row.get("Assigned Email") or ""),
+        "account_name":  str(row.get("Account Name") or ""),
+        "stages":        stages,
+        "files": {
+            "certificate":   _ls(cdir / "certificate", exts=[".pdf"]),
+            "director_id":   _ls(cdir / "director_id",
+                                 names=["ID Front.jpeg", "ID Back.jpeg", "ID_Combined.jpeg"]),
+            "app":           _ls(cdir / "app" / "artifacts", exts=[".apk", ".aab"]),
+            "payment_profile": [_pp(cdir)] if _pp(cdir) else [],
+        },
+        "tree":          _tree(cdir),
+        "version":       _read_version(cn, name),
+        "jobs":          jobs,
+    })
+
+
+@api_v2.route("/api/v2/company/<cn>/stage/<stage>", methods=["POST"])
+def v2_run_stage(cn, stage):
+    if stage not in STAGE_ORDER:
+        return jsonify({"error": f"Unknown stage: {stage}"}), 400
+
+    row = _find_row(cn)
+    if not row:
+        return jsonify({"error": "Company not found"}), 404
+
+    if _job_get(cn, stage).get("status") == "running":
+        return jsonify({"error": "Already running"}), 409
+
+    _spawn(cn, stage, lambda: _exec_stage(cn, stage, _find_row(cn) or row))
+    return jsonify({"status": "started", "cn": cn, "stage": stage})
+
+
+@api_v2.route("/api/v2/company/<cn>/run-all", methods=["POST"])
+def v2_run_all(cn):
+    """Run all pending stages in order for one company."""
+    row = _find_row(cn)
+    if not row:
+        return jsonify({"error": "Company not found"}), 404
+
+    running = [s for s in STAGE_ORDER if _job_get(cn, s).get("status") == "running"]
+    if running:
+        return jsonify({"error": f"'{running[0]}' is already running"}), 409
+
+    def _seq():
+        with _co_lock(cn):
+            for stage in STAGE_ORDER:
+                fresh = _find_row(cn) or {}
+                if _compute_stages(cn, fresh).get(stage):
+                    continue  # already done
+                cap = _Tee()
+                _job_set(cn, stage, status="running",
+                         started_at=datetime.now().isoformat(),
+                         finished_at=None, error=None, _cap=cap)
+                old = sys.stdout
+                sys.stdout = cap
+                try:
+                    _exec_stage(cn, stage, _find_row(cn) or fresh)
+                    sys.stdout = old
+                    _job_set(cn, stage, status="done",
+                             finished_at=datetime.now().isoformat(),
+                             log=cap.get_log(), _cap=None)
+                except Exception as e:
+                    sys.stdout = old
+                    _job_set(cn, stage, status="failed",
+                             finished_at=datetime.now().isoformat(),
+                             error=str(e),
+                             log=cap.get_log() + "\n" + traceback.format_exc(),
+                             _cap=None)
+                    break  # stop on first failure
+
+    threading.Thread(target=_seq, daemon=True).start()
+    return jsonify({"status": "started"})
+
+
+@api_v2.route("/api/v2/company/<cn>/job/<stage>")
+def v2_job(cn, stage):
+    j = _job_get(cn, stage)
+    return jsonify(j if j else {"status": "idle"})
+
+
+@api_v2.route("/api/v2/company/search")
+def v2_search():
+    q = request.args.get("q", "").strip()
+    if len(q) < 2:
+        return jsonify([])
+
+    ql = q.lower()
+    rows = _all_rows()
+    results = []
+
+    for row in rows:
+        cn    = _cn8(row.get("Company Number"))
+        name  = str(row.get("Company Name") or "")
+        dirs  = str(row.get("Directors") or "")
+        if ql in cn or ql in name.lower() or ql in dirs.lower():
+            stages = _compute_stages(cn, row)
+            results.append({
+                "cn":        cn,
+                "name":      name,
+                "directors": dirs,
+                "n_done":    sum(stages.values()),
+                "stages":    stages,
+                "source":    "local",
+            })
+
+    # Fall back to CH API if nothing found locally
+    if not results:
+        try:
+            sys.path.insert(0, str(ROOT))
+            from run_pipeline import ch_get
+            r = ch_get(f"/search/companies?q={q}&items_per_page=8")
+            if r and r.status_code == 200:
+                for item in r.json().get("items", []):
+                    if item.get("company_status", "").lower() != "active": continue
+                    item_cn = _cn8(item.get("company_number", ""))
+                    # Skip if already in local list
+                    if any(x["cn"] == item_cn for x in results): continue
+                    results.append({
+                        "cn":        item_cn,
+                        "name":      item.get("title", ""),
+                        "directors": "",
+                        "n_done":    0,
+                        "stages":    {s: False for s in STAGE_ORDER},
+                        "source":    "ch_api",
+                    })
+        except Exception as e:
+            print(f"  CH search error: {e}")
+
+    return jsonify(results[:10])
+
+
+@api_v2.route("/api/v2/company/add", methods=["POST"])
+def v2_add_company():
+    data = request.get_json(force=True) or {}
+    cn   = _cn8(data.get("cn") or data.get("company_number") or "")
+    name = str(data.get("name") or data.get("company_name") or "").strip()
+    if not cn or cn == "00000000":
+        return jsonify({"error": "company_number required"}), 400
+
+    existing = _find_row(cn)
+    if existing:
+        return jsonify({"status": "exists", "cn": cn, "name": str(existing.get("Company Name") or "")}), 200
+
+    _add_company_row(cn, name)
+    return jsonify({"status": "added", "cn": cn, "name": name}), 201
+
+
+@api_v2.route("/api/v2/company/<cn>/version", methods=["POST"])
+def v2_set_version(cn):
+    """Save version_code + version_name for a company (does NOT rebuild — caller triggers that)."""
+    row = _find_row(cn)
+    if not row:
+        return jsonify({"error": "Company not found"}), 404
+    body = request.get_json(force=True, silent=True) or {}
+    vc = body.get("version_code")
+    vn = str(body.get("version_name", "")).strip()
+    if not isinstance(vc, int) or vc < 1:
+        return jsonify({"error": "version_code must be a positive integer"}), 400
+    if not vn:
+        return jsonify({"error": "version_name is required"}), 400
+    name = str(row.get("Company Name") or "")
+    _write_version(cn, name, vc, vn)
+    return jsonify({"status": "saved", "version_code": vc, "version_name": vn})
+
+
+@api_v2.route("/api/v2/company/<cn>/rerun-id", methods=["POST"])
+def v2_rerun_id(cn):
+    """Delete existing director ID files and regenerate a new one via Xbinder."""
+    row = _find_row(cn)
+    if not row:
+        return jsonify({"error": "Company not found"}), 404
+    if _job_get(cn, "director_id").get("status") == "running":
+        return jsonify({"error": "Already running"}), 409
+    _spawn(cn, "director_id", lambda: _exec_stage(cn, "director_id", _find_row(cn) or row))
+    return jsonify({"status": "started", "cn": cn, "stage": "director_id"})
+
+
+@api_v2.route("/api/v2/dl")
+def v2_download():
+    """Serve a file from pipeline_output (security: must be under DL_BASE).
+
+    ?inline=1  — serve inline (for in-browser preview); default is attachment download.
+    """
+    path = request.args.get("path", "").strip()
+    if not path:
+        return abort(400)
+    abs_path = Path(os.path.abspath(path))
+    if not str(abs_path).startswith(str(DL_BASE.resolve())):
+        return abort(403)
+    if not abs_path.is_file():
+        return abort(404)
+    inline = request.args.get("inline", "0") == "1"
+    return send_file(abs_path, as_attachment=not inline)

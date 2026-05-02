@@ -95,6 +95,16 @@
           <div class="field grow"><label>Or manual</label><input id="emailManual" type="email" placeholder="dev@example.com" /></div>
         </div>
         <div class="field" style="margin-top:.75rem"><label>Support Email</label><input id="supportEmail" type="email" readonly class="muted" /></div>
+        <hr />
+        <div class="field" style="margin-top:.75rem">
+          <label>Google TXT Token</label>
+          <input id="googleTxtToken" type="text" placeholder="google-site-verification=..." />
+        </div>
+        <div class="form-row" style="margin-top:.5rem">
+          <div class="field" style="max-width:160px"><label>TXT Host</label><input id="googleTxtHost" type="text" value="@" /></div>
+          <button class="btn secondary" id="btnApplyGoogleTxt" type="button">Apply TXT to DNS</button>
+        </div>
+        <div id="googleTxtStatus" class="status-bar hidden"></div>
       </div>
       <div class="nav-buttons"><button class="btn ghost" onclick="goStep(3)">&#x2190; Back</button><button class="btn primary" onclick="goStep(6)">Review &#x2192;</button></div>
     </section>
@@ -120,6 +130,34 @@
       <h2>Review &amp; Save</h2>
       <p class="hint">All auto-filled. Click any step to edit, or save now.</p>
       <div class="card review-card"><table class="review-table" id="reviewTable"><tbody></tbody></table></div>
+
+      <div class="card" style="margin-top:1rem">
+        <h3>Manual Inputs Needed For Play Signup</h3>
+        <p class="hint">Capture the representative identity details and the XBINDER ID files.</p>
+
+        <h4>Representative Identity (From XBINDER)</h4>
+        <div class="form-row">
+          <div class="field grow"><label>Full Name As On ID</label><input id="manualRepFullName" type="text" /></div>
+          <div class="field grow"><label>Personal Address</label><input id="manualRepAddress" type="text" /></div>
+        </div>
+        <div class="form-row">
+          <div class="field"><label>ID Type</label><input id="manualIdType" type="text" placeholder="Passport/National ID" /></div>
+          <div class="field"><label>ID Country</label><input id="manualIdCountry" type="text" placeholder="KE" /></div>
+          <div class="field"><label>ID Expiry Date</label><input id="manualIdExpiry" type="date" /></div>
+          <div class="field"><label>ID Quality Check</label><input id="manualIdQuality" type="text" placeholder="pending/ok" /></div>
+        </div>
+        <div class="form-row">
+          <div class="field grow"><label>ID Image Front Path</label><input id="manualIdFront" type="text" placeholder="D:\\...\\front.jpg" /></div>
+          <div class="field grow"><label>ID Image Back Path</label><input id="manualIdBack" type="text" placeholder="D:\\...\\back.jpg" /></div>
+        </div>
+
+        <div class="form-row" style="margin-top:.75rem">
+          <button class="btn secondary" id="btnLoadManualInputs" type="button">Load Manual Inputs</button>
+          <button class="btn primary" id="btnSaveManualInputs" type="button">Save Manual Inputs</button>
+        </div>
+        <div id="manualInputsStatus" class="status-bar hidden"></div>
+      </div>
+
       <div id="submitStatus" class="status-bar hidden"></div>
       <div class="nav-buttons"><button class="btn ghost" onclick="goStep(1)">&#x2190; Companies</button><button class="btn primary large" id="btnSubmit">&#x2705; Save to Pipeline</button></div>
     </section>

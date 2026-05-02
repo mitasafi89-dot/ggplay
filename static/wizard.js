@@ -19,6 +19,69 @@ function slugify(n){return n.toLowerCase().replace(/[^a-z0-9]+/g,"").substring(0
 function autoDisplayName(cn){return cn.trim().replace(STRIP_SUFFIXES,"").split(/\s+/).map(function(w){return w.charAt(0).toUpperCase()+w.slice(1).toLowerCase();}).join(" ").substring(0,30).trimEnd();}
 function delay(ms){return new Promise(function(r){setTimeout(r,ms);});}
 
+function manualPayload(companyNumber){
+  return {
+    company_number: companyNumber,
+    representative_id: {
+      full_name_as_on_id: $("#manualRepFullName").value.trim(),
+      personal_address: $("#manualRepAddress").value.trim(),
+      id_type: $("#manualIdType").value.trim(),
+      id_country: $("#manualIdCountry").value.trim(),
+      id_expiry_date: $("#manualIdExpiry").value,
+      id_image_front: $("#manualIdFront").value.trim(),
+      id_image_back: $("#manualIdBack").value.trim(),
+      id_quality_check: $("#manualIdQuality").value.trim() || "pending"
+    }
+  };
+}
+
+function fillManualForm(data){
+  var rep=data.representative_id||{};
+  $("#manualRepFullName").value=rep.full_name_as_on_id||"";
+  $("#manualRepAddress").value=rep.personal_address||"";
+  $("#manualIdType").value=rep.id_type||"";
+  $("#manualIdCountry").value=rep.id_country||"";
+  $("#manualIdExpiry").value=rep.id_expiry_date||"";
+  $("#manualIdFront").value=rep.id_image_front||"";
+  $("#manualIdBack").value=rep.id_image_back||"";
+  $("#manualIdQuality").value=rep.id_quality_check||"";
+}
+
+function loadManualInputs(companyNumber){
+  if(!companyNumber)return Promise.resolve();
+  var st=$("#manualInputsStatus");
+  show(st,"info");st.textContent="Loading manual inputs...";
+  return fetch("/api/pipeline/manual-inputs/"+encodeURIComponent(companyNumber))
+    .then(function(r){return r.json();})
+    .then(function(data){
+      if(data&&Object.keys(data).length){
+        fillManualForm(data);
+        st.textContent="Manual inputs loaded for "+companyNumber+".";
+        show(st,"success");
+      }else{
+        st.textContent="No saved manual inputs yet for "+companyNumber+".";
+        show(st,"warning");
+      }
+    })
+    .catch(function(){st.textContent="Could not load manual inputs.";show(st,"error");});
+}
+
+function saveManualInputs(){
+  var companyNumber=$("#dCompanyNumber").value.trim();
+  var st=$("#manualInputsStatus");
+  if(!companyNumber){show(st,"warning");st.textContent="Company Number is required.";return;}
+  var payload=manualPayload(companyNumber);
+  show(st,"info");st.textContent="Saving manual inputs...";
+  fetch("/api/pipeline/manual-inputs/"+encodeURIComponent(companyNumber),{
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body:JSON.stringify(payload)
+  }).then(function(r){return r.json();}).then(function(d){
+    if(d.success){st.textContent="Manual inputs saved.";show(st,"success");}
+    else{st.textContent="Error: "+(d.error||"Unknown");show(st,"error");}
+  }).catch(function(){st.textContent="Failed to save manual inputs.";show(st,"error");});
+}
+
 // ─── Navigation ──────────────────────────────────────────────
 function goStep(n){
   state.step=n;$$(".panel").forEach(function(p){p.classList.remove("active");});
@@ -195,6 +258,7 @@ async function autopilotFromExcel(row){
   setProgress(100);logAP("\uD83C\uDF89","<strong>Done! Opening review\u2026</strong>","ok");
   await delay(600);
   goStep(6);
+  loadManualInputs(cn);
 }
 
 // ─── Brand preview ───────────────────────────────────────────
@@ -208,6 +272,9 @@ $("#domainInput").addEventListener("input",function(){$("#supportEmail").value=t
 $("#btnCheckDomain").addEventListener("click",function(){var d=$("#domainInput").value.trim();if(!d)return;show($("#domainStatus"),"info");$("#domainStatus").textContent="Checking\u2026";fetch("/api/domains/check?domains="+encodeURIComponent(d)).then(function(r){return r.json();}).then(function(data){if(data.error){$("#domainStatus").textContent="Error";show($("#domainStatus"),"error");return;}var rs=Array.isArray(data)?data:(data.results||[data]);var av=rs.find(function(r){return r.available;});if(av){$("#domainStatus").textContent="\u2705 Available!";show($("#domainStatus"),"success");}else{$("#domainStatus").textContent="\u274C Not available.";show($("#domainStatus"),"warning");}}).catch(function(){$("#domainStatus").textContent="Failed.";show($("#domainStatus"),"error");});});
 $("#btnDunsLookup").addEventListener("click",function(){var cn=$("#dCompanyNumber").value;if(!cn)return;show($("#dunsStatus"),"info");$("#dunsStatus").textContent="Looking up\u2026";fetch("/api/duns/lookup?company_number="+cn).then(function(r){return r.json();}).then(function(d){if(d.duns_number){$("#dunsNumber").value=d.duns_number;$("#dunsStatus").textContent="\u2705 "+d.duns_number;show($("#dunsStatus"),"success");}else{$("#dunsStatus").textContent="Not found.";show($("#dunsStatus"),"warning");}}).catch(function(){$("#dunsStatus").textContent="Failed.";show($("#dunsStatus"),"error");});});
 $("#btnDunsRequest").addEventListener("click",function(){var cn=$("#dCompanyNumber").value,em=$("#dunsEmail").value;if(!cn||!em){show($("#dunsStatus"),"warning");$("#dunsStatus").textContent="Need company # + email.";return;}show($("#dunsStatus"),"info");$("#dunsStatus").textContent="Submitting\u2026";fetch("/api/duns/request",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({company_number:cn,email:em,first_name:$("#dunsFirst").value,last_name:$("#dunsLast").value})}).then(function(r){return r.json();}).then(function(d){if(d.duns_number){$("#dunsNumber").value=d.duns_number;$("#dunsStatus").textContent="\u2705 "+d.duns_number;show($("#dunsStatus"),"success");}else{$("#dunsStatus").textContent=d.message||"Submitted.";show($("#dunsStatus"),"success");}}).catch(function(){$("#dunsStatus").textContent="Failed.";show($("#dunsStatus"),"error");});});
+$("#btnApplyGoogleTxt").addEventListener("click",function(){var domain=$("#domainInput").value.trim(),token=$("#googleTxtToken").value.trim(),host=$("#googleTxtHost").value.trim()||"@",cn=$("#dCompanyNumber").value.trim(),st=$("#googleTxtStatus");if(!domain){show(st,"warning");st.textContent="Domain is required.";return;}if(!token){show(st,"warning");st.textContent="Paste the Google TXT token first.";return;}show(st,"info");st.textContent="Applying TXT to DNS...";fetch("/api/domains/apply-google-txt",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({company_number:cn,domain:domain,txt_value:token,hostname:host})}).then(function(r){return r.json();}).then(function(d){if(d.success){st.textContent="\u2705 TXT configured for "+domain+" (host "+host+")";show(st,"success");}else{st.textContent="Error: "+(d.error||"Failed to apply TXT");show(st,"error");}}).catch(function(){st.textContent="Failed to apply TXT.";show(st,"error");});});
+$("#btnLoadManualInputs").addEventListener("click",function(){loadManualInputs($("#dCompanyNumber").value.trim());});
+$("#btnSaveManualInputs").addEventListener("click",saveManualInputs);
 
 // ─── Review ──────────────────────────────────────────────────
 function populateReview(){var cn=$("#dCompanyNumber").value,nm=$("#dCompanyName").value,sn=$("#bShortName").value,dn=sn||generateShortName(nm),dm=$("#domainInput").value,em=$("#emailSelect").value||$("#emailManual").value,sp=$("#supportEmail").value,du=$("#dunsNumber").value,pal=paletteFor(nm),w='<span class="tag warn">Not set</span>';
@@ -221,7 +288,7 @@ btnSubmit.addEventListener("click",function(){var p={company_number:$("#dCompany
   fetch("/api/pipeline/add",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(p)}).then(function(r){return r.json();}).then(function(d){if(d.success){submitStatus.innerHTML='\u2705 <strong>Saved!</strong> Row '+(d.row||"")+'. <button class="btn primary sm" onclick="resetWizard()" style="margin-left:.5rem">\u26A1 Next Company</button>';show(submitStatus,"success");}else{submitStatus.textContent="Error: "+(d.error||"Unknown");show(submitStatus,"error");btnSubmit.disabled=false;}}).catch(function(){submitStatus.textContent="Connection failed.";show(submitStatus,"error");btnSubmit.disabled=false;});});
 
 // ─── Reset ───────────────────────────────────────────────────
-function resetWizard(){state={step:1,company:{},details:{},branding:{},domain:"",email:"",duns:{number:"",status:""}};$$("input:not([type=hidden]),select,textarea").forEach(function(el){el.value="";});hide(apSection);hide(submitStatus);btnSubmit.disabled=false;setProgress(0);goStep(1);loadFromExcel();}
+function resetWizard(){state={step:1,company:{},details:{},branding:{},domain:"",email:"",duns:{number:"",status:""}};$$('input:not([type=hidden]),select,textarea').forEach(function(el){if(el.type==="checkbox")el.checked=false;else el.value="";});hide(apSection);hide(submitStatus);hide($("#manualInputsStatus"));btnSubmit.disabled=false;setProgress(0);goStep(1);loadFromExcel();}
 window.resetWizard=resetWizard;
 
 // ─── Init ────────────────────────────────────────────────────

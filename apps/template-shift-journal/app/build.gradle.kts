@@ -5,7 +5,7 @@ plugins {
 }
 
 android {
-    namespace = "uk.template.shift"
+    namespace = "uk.company.utility"
     compileSdk = 35
 
     defaultConfig {
@@ -30,56 +30,31 @@ android {
             keyAlias = "upload"
             keyPassword = "b12266fe069e77f88a50551cca9acc8e"
         }
-        create("c02591663") {
-            storeFile = file("keystores/02591663.jks")
-            storePassword = "81b69ec2d57ac457c45efe79cf380dc1"
-            keyAlias = "upload"
-            keyPassword = "81b69ec2d57ac457c45efe79cf380dc1"
-        }
-        create("c08699016") {
-            storeFile = file("keystores/08699016.jks")
-            storePassword = "bcfb472cc508972bd7d376d4a8c7fcad"
-            keyAlias = "upload"
-            keyPassword = "bcfb472cc508972bd7d376d4a8c7fcad"
-        }
     }
 
     productFlavors {
         create("c13510663") {
             dimension = "brand"
-            applicationId = "uk.c13510663.shift"
+            applicationId = "uk.swiftpluspersonnel.app"
             buildConfigField("String", "COMPANY_NAME", "\"Swift Plus Personnel\"")
             buildConfigField("String", "COMPANY_NUMBER", "\"13510663\"")
-            buildConfigField("String", "SUPPORT_EMAIL", "\"drscholarysophia408@gmail.com\"")
+            buildConfigField("String", "SUPPORT_EMAIL", "\"dev@swift-plus-personnel.online\"")
+            buildConfigField("String", "COMPANY_DOMAIN", "\"swift-plus-personnel.online\"")
+            buildConfigField("String", "PRIVACY_POLICY_URL", "\"\"")
+            buildConfigField("String", "CONTACT_ADDRESS", "\"13510663 - COMPANIES HOUSE DEFAULT ADDRESS, Cardiff, CF14 8LH\"")
             buildConfigField("String", "ROLE_NOUN", "\"shift\"")
             buildConfigField("String", "ROLE_VERB_START", "\"Start Shift\"")
             buildConfigField("String", "ROLE_VERB_END", "\"End Shift\"")
             buildConfigField("String", "EXPORT_TITLE", "\"Shift Log\"")
+            buildConfigField("String", "CALC_TITLE", "\"Day Rate Calculator\"")
+            buildConfigField("String", "CALC_LABEL_A", "\"Daily Rate (£)\"")
+            buildConfigField("String", "CALC_LABEL_B", "\"Number of Days\"")
+            buildConfigField("String", "CALC_FORMULA", "\"MULTIPLY\"")
+            buildConfigField("String", "CALC_RESULT_LABEL", "\"Total Earnings\"")
+            buildConfigField("String", "INFO_TITLE", "\"Employment Reference\"")
+            buildConfigField("String", "INFO_ITEMS_JSON", "\"[{\\\"k\\\":\\\"National Living Wage\\\",\\\"v\\\":\\\"\\\\u00a311.44 / hr (Apr 2024)\\\"},{\\\"k\\\":\\\"Employer NI Threshold\\\",\\\"v\\\":\\\"\\\\u00a39,100 / yr\\\"},{\\\"k\\\":\\\"Employer NI Rate\\\",\\\"v\\\":\\\"13.8% above threshold\\\"},{\\\"k\\\":\\\"Statutory Holiday\\\",\\\"v\\\":\\\"28 days incl. 8 bank holidays\\\"},{\\\"k\\\":\\\"Holiday Pay Rate\\\",\\\"v\\\":\\\"12.07% of pay (part-time)\\\"},{\\\"k\\\":\\\"Auto-Enrolment Min.\\\",\\\"v\\\":\\\"3% employer contribution\\\"},{\\\"k\\\":\\\"IR35 Off-Payroll\\\",\\\"v\\\":\\\"Applies April 2021 (medium/large)\\\"},{\\\"k\\\":\\\"Statutory Sick Pay\\\",\\\"v\\\":\\\"\\\\u00a3116.75 / week (2024)\\\"}]\"")
+            buildConfigField("String", "ACTION_LABEL", "\"Book a Worker\"")
             signingConfig = signingConfigs.getByName("c13510663")
-        }
-        create("c02591663") {
-            dimension = "brand"
-            applicationId = "uk.c02591663.shift"
-            buildConfigField("String", "COMPANY_NAME", "\"51 St Margarets Road Managemen\"")
-            buildConfigField("String", "COMPANY_NUMBER", "\"02591663\"")
-            buildConfigField("String", "SUPPORT_EMAIL", "\"abdulelahhabib060@gmail.com\"")
-            buildConfigField("String", "ROLE_NOUN", "\"visit\"")
-            buildConfigField("String", "ROLE_VERB_START", "\"Start Visit\"")
-            buildConfigField("String", "ROLE_VERB_END", "\"End Visit\"")
-            buildConfigField("String", "EXPORT_TITLE", "\"Site Visit Log\"")
-            signingConfig = signingConfigs.getByName("c02591663")
-        }
-        create("c08699016") {
-            dimension = "brand"
-            applicationId = "uk.c08699016.shift"
-            buildConfigField("String", "COMPANY_NAME", "\"T- Quo\"")
-            buildConfigField("String", "COMPANY_NUMBER", "\"08699016\"")
-            buildConfigField("String", "SUPPORT_EMAIL", "\"aaaliyanzmoreau255@gmail.com\"")
-            buildConfigField("String", "ROLE_NOUN", "\"trip\"")
-            buildConfigField("String", "ROLE_VERB_START", "\"Start Trip\"")
-            buildConfigField("String", "ROLE_VERB_END", "\"End Trip\"")
-            buildConfigField("String", "EXPORT_TITLE", "\"Delivery Log\"")
-            signingConfig = signingConfigs.getByName("c08699016")
         }
     }
     // <<< GENERATED FLAVORS END

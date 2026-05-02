@@ -33,35 +33,52 @@ class Company:
     domain: str
     support_email: str
     archetype: str
-    short_name: str = ""          # ← NEW: curated app name from Excel
+    short_name: str = ""
+    address: str = ""
 
     @property
     def flavor(self) -> str:
-        """Gradle flavor name — must match [a-zA-Z][a-zA-Z0-9]*."""
         return f"c{self.company_number}"
 
     @property
+    def slug(self) -> str:
+        """Unique lowercase slug from company name — used as applicationId segment."""
+        name = re.sub(r"\s+(LTD|LIMITED|LLP|PLC|INC)\.?$", "", self.company_name, flags=re.IGNORECASE)
+        for stop in ("management", "services", "solutions", "group", "holdings",
+                     "enterprises", "consulting", "associates", "the", "and", "of"):
+            name = re.sub(rf"\b{stop}\b", "", name, flags=re.IGNORECASE)
+        slug = re.sub(r"[^a-zA-Z0-9]", "", name).lower()
+        if not slug or not slug[0].isalpha():
+            slug = "co" + slug
+        return slug[:20] or f"co{self.company_number}"
+
+    @property
     def application_id(self) -> str:
-        return f"uk.c{self.company_number}.shift"
+        return f"uk.{self.slug}.app"
 
     @property
     def display_name(self) -> str:
         """Launcher label — prefers curated short_name; falls back to
-        title-cased company name with LTD/LIMITED stripped, 30-char cap."""
-        # ── Option 1: use the curated short name if present ──
+        title-cased company name with LTD/LIMITED stripped, 30-char cap
+        that breaks on a word boundary to avoid mid-word cut-offs."""
         if self.short_name:
             return self.short_name[:30].rstrip()
 
-        # ── Fallback: auto-generate from company_name ──
         name = self.company_name.strip()
         name = re.sub(r"\s+(LTD|LIMITED|LLP|PLC)\.?$", "", name, flags=re.IGNORECASE)
         name = name.title()
-        return name[:30].rstrip()
+        if len(name) <= 30:
+            return name
+        # Truncate at last space within the 30-char window
+        truncated = name[:30]
+        last_space = truncated.rfind(" ")
+        return (truncated[:last_space] if last_space > 0 else truncated).rstrip()
 
 
 def load_companies(
     excel_path: str = EXCEL_PATH_DEFAULT,
     limit: int | None = None,
+    company_numbers: list[str] | None = None,
 ) -> list[Company]:
     """Read companies from the pipeline Excel. Skips rows without a company number."""
     wb = openpyxl.load_workbook(excel_path, data_only=True, read_only=True)
@@ -82,12 +99,16 @@ def load_companies(
                 return i
         return None
 
-    idx_num   = col("Company Number")
-    idx_name  = col("Company Name")
-    idx_sic   = col("SIC Codes")
+    idx_num    = col("Company Number")
+    idx_name   = col("Company Name")
+    idx_sic    = col("SIC Codes")
     idx_domain = col("Domain")
-    idx_email = col("Assigned Email")
-    idx_short = col_optional("Short Name")  # ← NEW: optional column
+    idx_email  = col("Assigned Email")
+    idx_short  = col_optional("Short Name")
+    idx_addr   = col_optional("Address")
+
+    # Normalise filter set once
+    filter_set = {n.zfill(8) if n.isdigit() and len(n) < 8 else n for n in (company_numbers or [])}
 
     out: list[Company] = []
     for row in rows:
@@ -99,18 +120,24 @@ def load_companies(
         if cn.isdigit() and len(cn) < 8:
             cn = cn.zfill(8)
 
+        if filter_set and cn not in filter_set:
+            continue
+
         sic_raw = (row[idx_sic] or "")
         primary_sic = sic_raw.split(",")[0].strip() if sic_raw else ""
         archetype = SIC_ARCHETYPE.get(primary_sic, DEFAULT_ARCHETYPE)
 
         domain = (row[idx_domain] or "").strip() if row[idx_domain] else ""
         email  = (row[idx_email] or "").strip() if row[idx_email] else ""
-        support = f"support@{domain}" if domain else (email or "support@example.uk")
+        support = f"dev@{domain}" if domain else (email or "support@example.uk")
 
-        # ── Read the optional Short Name cell ──
         short = ""
         if idx_short is not None:
             short = (row[idx_short] or "").strip() if row[idx_short] else ""
+
+        addr = ""
+        if idx_addr is not None:
+            addr = (row[idx_addr] or "").strip() if row[idx_addr] else ""
 
         out.append(Company(
             company_number=cn,
@@ -119,7 +146,8 @@ def load_companies(
             domain=domain,
             support_email=support,
             archetype=archetype,
-            short_name=short,                        # ← NEW
+            short_name=short,
+            address=addr,
         ))
 
         if limit is not None and len(out) >= limit:

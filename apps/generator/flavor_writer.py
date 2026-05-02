@@ -10,13 +10,55 @@ The static build.gradle.kts applies flavors.gradle.kts via `apply(from=...)`.
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
 from dataclasses import dataclass
+from pathlib import Path
 
 from .brand_synth import Palette, colors_xml, palette_for, strings_xml
 from .catalog import Company
 from .keystore_mint import Keystore
+from . import sic_map as _sic_map
+
+_ROOT = Path(__file__).parent.parent.parent
+
+
+def _load_version(company_number: str, company_name: str = "") -> dict:
+    """Read version.json for this company. Returns defaults if not found."""
+    import re as _re
+    safe = _re.sub(r'[\\/:*?"<>|]', "", company_name).strip()
+    folder = f"{company_number} - {safe}" if safe else company_number
+    ver_file = _ROOT / "pipeline_output" / "companies" / folder / "app" / "version.json"
+    if ver_file.exists():
+        try:
+            data = json.loads(ver_file.read_text(encoding="utf-8"))
+            return {
+                "version_code": int(data.get("version_code", 1)),
+                "version_name": str(data.get("version_name", "1.0")),
+            }
+        except Exception:
+            pass
+    return {"version_code": 1, "version_name": "1.0"}
+
+
+def _load_privacy_url(company_number: str, company_name: str = "") -> str:
+    """Read privacy_policy_url from the company's manifest.json if it exists."""
+    import re as _re
+    safe = _re.sub(r'[\\/:*?"<>|]', "", company_name).strip()
+    folder = f"{company_number} - {safe}" if safe else company_number
+    candidates = [
+        _ROOT / "pipeline_output" / "companies" / folder / "app" / "manifest.json",
+        _ROOT / "pipeline_output" / "apps" / company_number / "manifest.json",  # legacy
+    ]
+    for manifest in candidates:
+        if manifest.exists():
+            try:
+                data = json.loads(manifest.read_text(encoding="utf-8"))
+                return data.get("privacy_policy_url") or ""
+            except Exception:
+                pass
+    return ""
 
 
 @dataclass(frozen=True)
@@ -29,6 +71,17 @@ class BuiltFlavor:
 
 def _gradle_escape(s: str) -> str:
     return s.replace("\\", "\\\\").replace('"', '\\"').replace("$", "\\$")
+
+
+def _bc_str(s: str) -> str:
+    """Produce the Gradle buildConfigField third-arg for a String value.
+    Applies two levels of escaping: Python→Java literal→Kotlin literal.
+    Handles strings containing quotes, backslashes, JSON, etc.
+    """
+    java_content = s.replace("\\", "\\\\").replace('"', '\\"')
+    java_expr = f'"{java_content}"'
+    kotlin = java_expr.replace("\\", "\\\\").replace('"', '\\"').replace("$", "\\$")
+    return f'"{kotlin}"'
 
 
 def _sic_role_vocab(company: Company) -> dict[str, str]:
@@ -122,18 +175,35 @@ def write_flavors_gradle(built: list[BuiltFlavor], app_dir: str) -> str:
     lines += ["    }", "", "    productFlavors {"]
     for b in built:
         c = b.company
-        vocab = _sic_role_vocab(c)
+        vocab  = _sic_role_vocab(c)
+        sic    = _sic_map.lookup(c.sic_codes)
+        ver    = _load_version(c.company_number, c.company_name)
+        import json as _json
+        info_json = _json.dumps(sic["info_items"], ensure_ascii=True, separators=(",", ":"))
         lines += [
             f'        create("{c.flavor}") {{',
             '            dimension = "brand"',
             f'            applicationId = "{c.application_id}"',
+            f'            versionCode = {ver["version_code"]}',
+            f'            versionName = "{_gradle_escape(ver["version_name"])}"',
             f'            buildConfigField("String", "COMPANY_NAME", "\\"{_gradle_escape(c.display_name)}\\"")',
             f'            buildConfigField("String", "COMPANY_NUMBER", "\\"{_gradle_escape(c.company_number)}\\"")',
             f'            buildConfigField("String", "SUPPORT_EMAIL", "\\"{_gradle_escape(c.support_email)}\\"")',
+            f'            buildConfigField("String", "COMPANY_DOMAIN", "\\"{_gradle_escape(c.domain)}\\"")',
+            f'            buildConfigField("String", "PRIVACY_POLICY_URL", "\\"{_gradle_escape(_load_privacy_url(c.company_number))}\\"")',
+            f'            buildConfigField("String", "CONTACT_ADDRESS", "\\"{_gradle_escape(c.address)}\\"")',
             f'            buildConfigField("String", "ROLE_NOUN", "\\"{vocab["ROLE_NOUN"]}\\"")',
             f'            buildConfigField("String", "ROLE_VERB_START", "\\"{vocab["ROLE_VERB_START"]}\\"")',
             f'            buildConfigField("String", "ROLE_VERB_END", "\\"{vocab["ROLE_VERB_END"]}\\"")',
             f'            buildConfigField("String", "EXPORT_TITLE", "\\"{vocab["EXPORT_TITLE"]}\\"")',
+            f'            buildConfigField("String", "CALC_TITLE", "\\"{_gradle_escape(sic["calc_title"])}\\"")',
+            f'            buildConfigField("String", "CALC_LABEL_A", "\\"{_gradle_escape(sic["calc_label_a"])}\\"")',
+            f'            buildConfigField("String", "CALC_LABEL_B", "\\"{_gradle_escape(sic["calc_label_b"])}\\"")',
+            f'            buildConfigField("String", "CALC_FORMULA", "\\"{sic["calc_formula"]}\\"")',
+            f'            buildConfigField("String", "CALC_RESULT_LABEL", "\\"{_gradle_escape(sic["calc_result_label"])}\\"")',
+            f'            buildConfigField("String", "INFO_TITLE", "\\"{_gradle_escape(sic["info_title"])}\\"")',
+            f'            buildConfigField("String", "INFO_ITEMS_JSON", {_bc_str(info_json)})',
+            f'            buildConfigField("String", "ACTION_LABEL", "\\"{_gradle_escape(sic["action_label"])}\\"")',
             f'            signingConfig = signingConfigs.getByName("{c.flavor}")',
             '        }',
         ]
