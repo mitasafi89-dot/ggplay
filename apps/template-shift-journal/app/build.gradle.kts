@@ -24,37 +24,39 @@ android {
 
 // >>> GENERATED FLAVORS START — managed by apps/generator/generate.py
     signingConfigs {
-        create("c13510663") {
-            storeFile = file("keystores/13510663.jks")
-            storePassword = "b12266fe069e77f88a50551cca9acc8e"
+        create("c02591663") {
+            storeFile = file("keystores/02591663.jks")
+            storePassword = "81b69ec2d57ac457c45efe79cf380dc1"
             keyAlias = "upload"
-            keyPassword = "b12266fe069e77f88a50551cca9acc8e"
+            keyPassword = "81b69ec2d57ac457c45efe79cf380dc1"
         }
     }
 
     productFlavors {
-        create("c13510663") {
+        create("c02591663") {
             dimension = "brand"
-            applicationId = "uk.swiftpluspersonnel.app"
-            buildConfigField("String", "COMPANY_NAME", "\"Swift Plus Personnel\"")
-            buildConfigField("String", "COMPANY_NUMBER", "\"13510663\"")
-            buildConfigField("String", "SUPPORT_EMAIL", "\"dev@swift-plus-personnel.online\"")
-            buildConfigField("String", "COMPANY_DOMAIN", "\"swift-plus-personnel.online\"")
+            applicationId = "uk.co51stmargaretsroad.app"
+            versionCode = 2
+            versionName = "1.1"
+            buildConfigField("String", "COMPANY_NAME", "\"51 St Margarets Road\"")
+            buildConfigField("String", "COMPANY_NUMBER", "\"02591663\"")
+            buildConfigField("String", "SUPPORT_EMAIL", "\"dev@51stmargarets.site\"")
+            buildConfigField("String", "COMPANY_DOMAIN", "\"51stmargarets.site\"")
             buildConfigField("String", "PRIVACY_POLICY_URL", "\"\"")
-            buildConfigField("String", "CONTACT_ADDRESS", "\"13510663 - COMPANIES HOUSE DEFAULT ADDRESS, Cardiff, CF14 8LH\"")
-            buildConfigField("String", "ROLE_NOUN", "\"shift\"")
-            buildConfigField("String", "ROLE_VERB_START", "\"Start Shift\"")
-            buildConfigField("String", "ROLE_VERB_END", "\"End Shift\"")
-            buildConfigField("String", "EXPORT_TITLE", "\"Shift Log\"")
-            buildConfigField("String", "CALC_TITLE", "\"Day Rate Calculator\"")
-            buildConfigField("String", "CALC_LABEL_A", "\"Daily Rate (£)\"")
-            buildConfigField("String", "CALC_LABEL_B", "\"Number of Days\"")
-            buildConfigField("String", "CALC_FORMULA", "\"MULTIPLY\"")
-            buildConfigField("String", "CALC_RESULT_LABEL", "\"Total Earnings\"")
-            buildConfigField("String", "INFO_TITLE", "\"Employment Reference\"")
-            buildConfigField("String", "INFO_ITEMS_JSON", "\"[{\\\"k\\\":\\\"National Living Wage\\\",\\\"v\\\":\\\"\\\\u00a311.44 / hr (Apr 2024)\\\"},{\\\"k\\\":\\\"Employer NI Threshold\\\",\\\"v\\\":\\\"\\\\u00a39,100 / yr\\\"},{\\\"k\\\":\\\"Employer NI Rate\\\",\\\"v\\\":\\\"13.8% above threshold\\\"},{\\\"k\\\":\\\"Statutory Holiday\\\",\\\"v\\\":\\\"28 days incl. 8 bank holidays\\\"},{\\\"k\\\":\\\"Holiday Pay Rate\\\",\\\"v\\\":\\\"12.07% of pay (part-time)\\\"},{\\\"k\\\":\\\"Auto-Enrolment Min.\\\",\\\"v\\\":\\\"3% employer contribution\\\"},{\\\"k\\\":\\\"IR35 Off-Payroll\\\",\\\"v\\\":\\\"Applies April 2021 (medium/large)\\\"},{\\\"k\\\":\\\"Statutory Sick Pay\\\",\\\"v\\\":\\\"\\\\u00a3116.75 / week (2024)\\\"}]\"")
-            buildConfigField("String", "ACTION_LABEL", "\"Book a Worker\"")
-            signingConfig = signingConfigs.getByName("c13510663")
+            buildConfigField("String", "CONTACT_ADDRESS", "\"Flat 1 St. Margarets Road, Twickenham, TW1 2LL, England\"")
+            buildConfigField("String", "ROLE_NOUN", "\"visit\"")
+            buildConfigField("String", "ROLE_VERB_START", "\"Start Visit\"")
+            buildConfigField("String", "ROLE_VERB_END", "\"End Visit\"")
+            buildConfigField("String", "EXPORT_TITLE", "\"Site Visit Log\"")
+            buildConfigField("String", "CALC_TITLE", "\"Service Charge Calculator\"")
+            buildConfigField("String", "CALC_LABEL_A", "\"Annual Budget (£)\"")
+            buildConfigField("String", "CALC_LABEL_B", "\"Number of Units\"")
+            buildConfigField("String", "CALC_FORMULA", "\"DIVIDE\"")
+            buildConfigField("String", "CALC_RESULT_LABEL", "\"Charge Per Unit\"")
+            buildConfigField("String", "INFO_TITLE", "\"Residents Management Reference\"")
+            buildConfigField("String", "INFO_ITEMS_JSON", "\"[{\\\"k\\\":\\\"LTA 1985 Section 19\\\",\\\"v\\\":\\\"Charges must be reasonable\\\"},{\\\"k\\\":\\\"Section 20 Threshold\\\",\\\"v\\\":\\\"Consult if works > \\\\u00a3250/unit\\\"},{\\\"k\\\":\\\"Ground Rent Cap\\\",\\\"v\\\":\\\"Peppercorn (Leasehold Reform 2022)\\\"},{\\\"k\\\":\\\"Right to Manage\\\",\\\"v\\\":\\\"50% leaseholder participation\\\"},{\\\"k\\\":\\\"Sinking Fund\\\",\\\"v\\\":\\\"Optional but recommended\\\"},{\\\"k\\\":\\\"Management Company AGM\\\",\\\"v\\\":\\\"Required under articles\\\"},{\\\"k\\\":\\\"Accounts Filing\\\",\\\"v\\\":\\\"9 months after year-end (ltd)\\\"},{\\\"k\\\":\\\"Directors' Duties\\\",\\\"v\\\":\\\"Companies Act 2006 s.172\\\"}]\"")
+            buildConfigField("String", "ACTION_LABEL", "\"Contact Management\"")
+            signingConfig = signingConfigs.getByName("c02591663")
         }
     }
     // <<< GENERATED FLAVORS END
@@ -67,6 +69,9 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            ndk {
+                debugSymbolLevel = "SYMBOL_TABLE"
+            }
         }
         debug {
             isMinifyEnabled = false

@@ -621,9 +621,115 @@
     /* ── Empty ── */
     .empty-msg { color: var(--muted); font-size: 13px; padding: 10px 0; }
 
+    /* ── Play Console section ── */
+    .pc-section { margin-bottom: 24px; }
+    .pc-status-badge {
+      display: inline-block; margin-left: 8px;
+      padding: 1px 8px; border-radius: 999px; font-size: 11px; font-weight: 600;
+      border: 1px solid; text-transform: none; letter-spacing: 0;
+    }
+    .pc-status-badge.ready  { color: var(--green);  border-color: rgba(63,185,80,.4);  background: rgba(63,185,80,.08); }
+    .pc-status-badge.partial{ color: var(--orange); border-color: rgba(219,109,40,.4); background: rgba(219,109,40,.08); }
+    .pc-status-badge.empty  { color: var(--muted);  border-color: var(--border);       background: transparent; }
+    .pc-card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 10px; padding: 16px 18px;
+    }
+    .pc-row { display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 14px; }
+    .pc-field { display: flex; flex-direction: column; gap: 5px; min-width: 160px; }
+    .pc-label { font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; }
+    .pc-hint  { font-size: 10px; font-weight: 400; color: var(--border); text-transform: none; letter-spacing: 0; margin-left: 4px; }
+    .pc-char-wrap { position: relative; }
+    .pc-counter { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); font-size: 10px; color: var(--muted); pointer-events: none; }
+    .pc-input {
+      background: var(--bg); border: 1px solid var(--border); border-radius: 6px;
+      padding: 7px 10px; color: var(--text); font-size: 13px;
+      outline: none; transition: border-color .15s; width: 100%;
+    }
+    .pc-input:focus { border-color: var(--blue); }
+    .pc-mono { font-family: "Consolas", monospace; font-size: 12px; }
+    .pc-radios { display: flex; gap: 14px; align-items: center; padding-top: 2px; }
+    .pc-radio  { display: flex; align-items: center; gap: 5px; font-size: 13px; cursor: pointer; }
+    .pc-decl-title { font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase;
+                     letter-spacing: .5px; margin: 4px 0 8px; }
+    .pc-check {
+      display: flex; align-items: flex-start; gap: 8px;
+      font-size: 13px; line-height: 1.45; cursor: pointer;
+      padding: 6px 8px; border-radius: 6px; margin-bottom: 4px;
+    }
+    .pc-check:hover { background: var(--surface2); }
+    .pc-check input[type=checkbox] { margin-top: 2px; flex-shrink: 0; accent-color: var(--blue); }
+    .pc-pp-link {
+      color: var(--blue); font-size: 12px; font-family: "Consolas", monospace;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      flex: 1; min-width: 0;
+    }
+    .pc-pp-empty { color: var(--muted); font-size: 12px; font-style: italic; }
+    .pc-save-row { display: flex; align-items: center; gap: 12px; margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border); }
+
     /* ── btn-orange ── */
     .btn-orange { border-color: rgba(219,109,40,.5); color: var(--orange); background: transparent; }
     .btn-orange:hover { background: rgba(219,109,40,.1); }
+
+    /* ── PC Accordion ── */
+    .pc-accordion { border: 1px solid var(--border); border-radius: 8px; margin-bottom: 6px; overflow: hidden; }
+    .pc-accordion[open] { border-color: rgba(47,129,247,.35); }
+    .pc-accordion > summary {
+      display: flex; align-items: center; gap: 10px;
+      padding: 10px 14px; cursor: pointer; list-style: none;
+      background: var(--surface); user-select: none; transition: background .1s;
+    }
+    .pc-accordion > summary::-webkit-details-marker { display: none; }
+    .pc-accordion[open] > summary { border-bottom: 1px solid var(--border); }
+    .pc-accordion > summary:hover { background: var(--surface2); }
+    .pc-acc-chevron { color: var(--muted); font-size: 9px; transition: transform .15s; flex-shrink: 0; }
+    .pc-accordion[open] .pc-acc-chevron { transform: rotate(90deg); }
+    .pc-acc-num {
+      width: 18px; height: 18px; border-radius: 50%;
+      background: var(--bg); border: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 9px; font-weight: 700; color: var(--muted); flex-shrink: 0;
+    }
+    .pc-acc-title { font-weight: 600; font-size: 13px; flex: 1; }
+    .pc-acc-badge {
+      font-size: 10px; font-weight: 700; padding: 1px 7px;
+      border-radius: 999px; border: 1px solid; flex-shrink: 0;
+    }
+    .pc-acc-badge.auto { color: var(--green);  border-color: rgba(63,185,80,.4);  background: rgba(63,185,80,.07); }
+    .pc-acc-badge.done { color: var(--green);  border-color: rgba(63,185,80,.4);  background: rgba(63,185,80,.07); }
+    .pc-acc-badge.action { color: var(--orange); border-color: rgba(219,109,40,.4); background: rgba(219,109,40,.08); }
+    .pc-accordion-body { padding: 12px 14px; background: var(--bg); }
+    .pc-auto-pill {
+      display: inline-flex; align-items: center; gap: 4px;
+      background: rgba(63,185,80,.07); border: 1px solid rgba(63,185,80,.25);
+      border-radius: 4px; padding: 4px 8px; font-size: 11px; color: var(--green);
+      margin-bottom: 10px;
+    }
+    .pc-action-pill {
+      display: inline-flex; align-items: center; gap: 4px;
+      background: rgba(219,109,40,.07); border: 1px solid rgba(219,109,40,.3);
+      border-radius: 4px; padding: 4px 8px; font-size: 11px; color: var(--orange);
+      margin-bottom: 10px;
+    }
+    .pc-table { width: 100%; border-collapse: collapse; font-size: 12px; margin-bottom: 8px; }
+    .pc-table td { padding: 4px 6px; border-bottom: 1px solid rgba(48,54,61,.6); vertical-align: top; }
+    .pc-table td:first-child { color: var(--muted); width: 46%; }
+    .pc-table tr:last-child td { border-bottom: none; }
+    .pc-check-action {
+      display: flex; align-items: flex-start; gap: 8px;
+      font-size: 13px; line-height: 1.45; cursor: pointer;
+      padding: 7px 10px; border-radius: 6px; margin-bottom: 4px;
+      border: 1px solid rgba(219,109,40,.3); background: rgba(219,109,40,.04);
+    }
+    .pc-check-action:hover { background: rgba(219,109,40,.1); }
+    .pc-check-action input[type=checkbox] { margin-top: 2px; flex-shrink: 0; accent-color: var(--orange); }
+    .pc-textarea {
+      background: var(--bg); border: 1px solid var(--border); border-radius: 6px;
+      padding: 7px 10px; color: var(--text); font-size: 12px; outline: none;
+      transition: border-color .15s; width: 100%; resize: vertical;
+      font-family: inherit; line-height: 1.5;
+    }
+    .pc-textarea:focus { border-color: var(--blue); }
 
     /* ── Tree file: button + download icon ── */
     .tree-btn {
@@ -997,6 +1103,7 @@ function renderDetail() {
   const stageHtml = STAGES.map(s => buildStageRow(s, d)).join("");
 
   const ver = d.version || {version_code: 1, version_name: "1.0"};
+  const pc  = d.play_console || {};
 
   const treeHtml = d.tree
     ? renderTree(d.tree, 0)
@@ -1063,11 +1170,20 @@ function renderDetail() {
       </div>
     </div>
 
+    ${renderPcSection(d, pc)}
+
     <div class="files-section">
       <div class="section-title">Files &amp; Folders</div>
       <div class="tree-root">${treeHtml}</div>
     </div>
   `;
+  // Set textarea values after render to avoid template literal escaping issues
+  const _pcShort = document.getElementById('pc-short-desc');
+  if (_pcShort) { _pcShort.value = pc.short_description || ''; const _sc = document.getElementById('pc-short-count'); if(_sc) _sc.textContent = _pcShort.value.length; }
+  const _pcFull  = document.getElementById('pc-full-desc');
+  if (_pcFull)  { _pcFull.value  = pc.full_description  || ''; const _fc = document.getElementById('pc-full-count');  if(_fc) _fc.textContent = _pcFull.value.length; }
+  const _pcNotes = document.getElementById('pc-release-notes');
+  if (_pcNotes) { _pcNotes.value = pc.release_notes || ''; const _nc = document.getElementById('pc-notes-count'); if(_nc) _nc.textContent = _pcNotes.value.length; }
 }
 
 function buildStageRow(s, d) {
@@ -1148,10 +1264,9 @@ function renderTree(node, depth) {
     const ico     = fileIco(node.name);
     const pathEnc = encodeURIComponent(node.path);
     const sizeVal = node.size || 0;
-    // Store path/name in data-* to avoid quoting conflicts inside onclick=""
     return `<div class="tree-file" data-path="${x(node.path)}" data-name="${x(node.name)}" data-size="${sizeVal}">
       <span class="tree-ico">${ico}</span>
-      <button class="tree-btn" onclick="var d=this.closest('.tree-file').dataset;previewFile(d.path,d.name,+d.size)" title="${x(node.name)}">${x(node.name)}</button>
+      <button class="tree-btn" title="${x(node.name)}">${x(node.name)}</button>
       ${size}
       <a class="tree-dl-btn" href="/api/v2/dl?path=${pathEnc}" download="${x(node.name)}" title="Download">⬇</a>
     </div>`;
@@ -1203,6 +1318,352 @@ async function saveAndRebuild() {
     await runStage("app");
   } catch(e) {
     toast("Failed: " + e.message, "error");
+  }
+}
+
+// ── Play Console form ─────────────────────────────────────────────────────────
+
+function pcBadge(pc) {
+  const allDone = pc.policy_confirmed && pc.signing_tos_accepted && pc.export_laws_accepted &&
+                  pc.ratings_iarc_agreed && pc.legal_compliance;
+  const any = pc.policy_confirmed || pc.signing_tos_accepted || pc.export_laws_accepted || pc.app_name;
+  if (allDone && pc.app_name) return `<span class="pc-status-badge ready">✓ Ready</span>`;
+  if (any)                    return `<span class="pc-status-badge partial">Incomplete</span>`;
+  return `<span class="pc-status-badge empty">Not filled</span>`;
+}
+
+function renderPcSection(d, pc) {
+  const cn    = d.cn;
+  const s1ok  = pc.policy_confirmed && pc.signing_tos_accepted && pc.export_laws_accepted;
+  const s3ok  = !!pc.ratings_iarc_agreed;
+  const s4ok  = !!pc.legal_compliance;
+
+  function ab(isAuto, isDone) {
+    if (isAuto) return `<span class="pc-acc-badge auto">✓ Auto</span>`;
+    return isDone ? `<span class="pc-acc-badge done">✓ Done</span>` : `<span class="pc-acc-badge action">⚠ Action</span>`;
+  }
+
+  const ppUrl = d.privacy_policy_url
+    ? `<a class="pc-pp-link" href="${x(d.privacy_policy_url)}" target="_blank">${x(d.privacy_policy_url)}</a>
+       <button class="btn btn-sm btn-ghost" style="flex-shrink:0"
+         onclick="navigator.clipboard.writeText(${JSON.stringify(d.privacy_policy_url)}).then(()=>toast('Copied','success'))">Copy</button>`
+    : `<span class="pc-pp-empty">Not generated yet — run the App stage</span>`;
+
+  return `
+  <div class="pc-section">
+    <div class="section-title">Google Play Console
+      <span id="pc-badge">${pcBadge(pc)}</span>
+    </div>
+
+    <!-- 1. Create App -->
+    <details class="pc-accordion"${!s1ok ? ' open' : ''}>
+      <summary>
+        <span class="pc-acc-chevron">▶</span><span class="pc-acc-num">1</span>
+        <span class="pc-acc-title">Create App</span>${ab(false, s1ok)}
+      </summary>
+      <div class="pc-accordion-body">
+        ${!s1ok ? '<div class="pc-action-pill">⚠ Tick the 3 declarations below to complete</div>' : '<div class="pc-auto-pill">✓ All declarations confirmed</div>'}
+        <div class="pc-row">
+          <div class="pc-field" style="flex:1">
+            <label class="pc-label">App name <span class="pc-hint">max 30 chars</span></label>
+            <div class="pc-char-wrap">
+              <input id="pc-app-name" class="pc-input" type="text" maxlength="30"
+                     value="${x((pc.app_name || d.name || '').slice(0,30))}"
+                     oninput="document.getElementById('pc-name-count').textContent=this.value.length" />
+              <span class="pc-counter"><span id="pc-name-count">${(pc.app_name||d.name||'').slice(0,30).length}</span> / 30</span>
+            </div>
+          </div>
+          <div class="pc-field" style="flex:2">
+            <label class="pc-label">Package name <span class="pc-hint">max 150 · auto-filled from build</span></label>
+            <div class="pc-char-wrap">
+              <input id="pc-pkg" class="pc-input pc-mono" type="text" maxlength="150"
+                     value="${x(pc.package_name || d.application_id || '')}"
+                     placeholder="e.g. uk.company.shiftjournal"
+                     oninput="document.getElementById('pc-pkg-count').textContent=this.value.length" />
+              <span class="pc-counter"><span id="pc-pkg-count">${(pc.package_name||d.application_id||'').length}</span> / 150</span>
+            </div>
+          </div>
+        </div>
+        <div class="pc-row">
+          <div class="pc-field">
+            <label class="pc-label">Language</label>
+            <select id="pc-lang" class="pc-input">
+              <option value="en-GB" ${(pc.default_language||'en-GB')==='en-GB'?'selected':''}>English (UK) – en-GB</option>
+              <option value="en-US" ${pc.default_language==='en-US'?'selected':''}>English (US) – en-US</option>
+            </select>
+          </div>
+          <div class="pc-field">
+            <label class="pc-label">App or game</label>
+            <div class="pc-radios">
+              <label class="pc-radio"><input type="radio" name="pc-type-${cn}" value="app" ${(pc.app_type||'app')==='app'?'checked':''} /> App</label>
+              <label class="pc-radio"><input type="radio" name="pc-type-${cn}" value="game" ${pc.app_type==='game'?'checked':''} /> Game</label>
+            </div>
+          </div>
+          <div class="pc-field">
+            <label class="pc-label">Free or paid</label>
+            <div class="pc-radios">
+              <label class="pc-radio"><input type="radio" name="pc-paid-${cn}" value="free" ${pc.is_free!==false?'checked':''} /> Free</label>
+              <label class="pc-radio"><input type="radio" name="pc-paid-${cn}" value="paid" ${pc.is_free===false?'checked':''} /> Paid</label>
+            </div>
+          </div>
+        </div>
+        <div class="pc-row" style="margin-bottom:10px">
+          <div class="pc-field" style="flex:1">
+            <label class="pc-label">Privacy policy URL</label>
+            <div style="display:flex;gap:8px;align-items:center;">${ppUrl}</div>
+          </div>
+        </div>
+        <div class="pc-decl-title">Declarations — tick all three</div>
+        <label class="pc-check-action"><input type="checkbox" id="pc-policy" ${pc.policy_confirmed?'checked':''} />
+          <span>I confirm this app meets the <strong>Developer Program Policies</strong></span></label>
+        <label class="pc-check-action"><input type="checkbox" id="pc-signing" ${pc.signing_tos_accepted?'checked':''} />
+          <span>I accept the <strong>Play App Signing Terms of Service</strong></span></label>
+        <label class="pc-check-action"><input type="checkbox" id="pc-export" ${pc.export_laws_accepted?'checked':''} />
+          <span>I accept the <strong>US export laws</strong></span></label>
+      </div>
+    </details>
+
+    <!-- 2. App Content -->
+    <details class="pc-accordion">
+      <summary>
+        <span class="pc-acc-chevron">▶</span><span class="pc-acc-num">2</span>
+        <span class="pc-acc-title">App Content (Access &amp; Ads)</span>${ab(true, true)}
+      </summary>
+      <div class="pc-accordion-body">
+        <div class="pc-auto-pill">✓ Pre-selected — no action needed</div>
+        <table class="pc-table">
+          <tr><td>App access</td><td>All functionality available without restrictions</td></tr>
+          <tr><td>Contains ads</td><td>No — this app does not contain ads</td></tr>
+        </table>
+      </div>
+    </details>
+
+    <!-- 3. Content Ratings -->
+    <details class="pc-accordion"${!s3ok ? ' open' : ''}>
+      <summary>
+        <span class="pc-acc-chevron">▶</span><span class="pc-acc-num">3</span>
+        <span class="pc-acc-title">Content Ratings (IARC)</span>${ab(false, s3ok)}
+      </summary>
+      <div class="pc-accordion-body">
+        ${!s3ok ? '<div class="pc-action-pill">⚠ Agree to IARC terms below to complete</div>' : '<div class="pc-auto-pill">✓ IARC terms agreed</div>'}
+        <table class="pc-table">
+          <tr><td>App category</td><td>All Other App Types</td></tr>
+          <tr><td>Contact email</td>
+            <td><input id="pc-ratings-email" class="pc-input" type="email" style="max-width:260px"
+                 value="${x(pc.ratings_email||'')}" placeholder="support@example.com" /></td>
+          </tr>
+          <tr><td>Violence / graphic content</td><td style="color:var(--green)">No</td></tr>
+          <tr><td>References to real violence</td><td style="color:var(--green)">No</td></tr>
+          <tr><td>Cartoon / fantasy violence</td><td style="color:var(--green)">No</td></tr>
+          <tr><td>Sexual content or nudity</td><td style="color:var(--green)">No</td></tr>
+          <tr><td>Profanity / crude language</td><td style="color:var(--green)">No</td></tr>
+          <tr><td>Controlled drugs or alcohol</td><td style="color:var(--green)">No</td></tr>
+          <tr><td>Simulated gambling</td><td style="color:var(--green)">No</td></tr>
+          <tr><td>User interaction / chat</td><td style="color:var(--green)">No</td></tr>
+          <tr><td>Location sharing</td><td style="color:var(--green)">No</td></tr>
+        </table>
+        <label class="pc-check-action"><input type="checkbox" id="pc-iarc" ${pc.ratings_iarc_agreed?'checked':''} />
+          <span>I agree to the <strong>IARC Terms of Service</strong> and confirm the above answers are accurate</span></label>
+      </div>
+    </details>
+
+    <!-- 4. Target Audience -->
+    <details class="pc-accordion"${!s4ok ? ' open' : ''}>
+      <summary>
+        <span class="pc-acc-chevron">▶</span><span class="pc-acc-num">4</span>
+        <span class="pc-acc-title">Target Audience &amp; Content</span>${ab(false, s4ok)}
+      </summary>
+      <div class="pc-accordion-body">
+        ${!s4ok ? '<div class="pc-action-pill">⚠ Confirm legal compliance below</div>' : '<div class="pc-auto-pill">✓ Confirmed</div>'}
+        <table class="pc-table">
+          <tr><td>Target age group</td><td>18 and over</td></tr>
+          <tr><td>Appeals to children</td><td style="color:var(--green)">No — does not target children</td></tr>
+        </table>
+        <label class="pc-check-action"><input type="checkbox" id="pc-legal" ${pc.legal_compliance?'checked':''} />
+          <span>I confirm this app targets users <strong>18 and over</strong> and does not knowingly collect data from children</span></label>
+      </div>
+    </details>
+
+    <!-- 5. Data Safety -->
+    <details class="pc-accordion">
+      <summary>
+        <span class="pc-acc-chevron">▶</span><span class="pc-acc-num">5</span>
+        <span class="pc-acc-title">Data Safety</span>${ab(true, true)}
+      </summary>
+      <div class="pc-accordion-body">
+        <div class="pc-auto-pill">✓ Pre-selected — no action needed</div>
+        <table class="pc-table">
+          <tr><td>Data collection / sharing</td><td>No — app does not collect or share user data</td></tr>
+          <tr><td>Families policy</td><td>Not applicable (18+ audience only)</td></tr>
+        </table>
+      </div>
+    </details>
+
+    <!-- 6. Policy Declarations -->
+    <details class="pc-accordion">
+      <summary>
+        <span class="pc-acc-chevron">▶</span><span class="pc-acc-num">6</span>
+        <span class="pc-acc-title">Policy Declarations</span>${ab(true, true)}
+      </summary>
+      <div class="pc-accordion-body">
+        <div class="pc-auto-pill">✓ Pre-selected — no action needed</div>
+        <table class="pc-table">
+          <tr><td>Government app</td><td>No</td></tr>
+          <tr><td>Financial features</td><td>No financial features</td></tr>
+          <tr><td>Advertising ID (AAID)</td><td>No — does not use advertising ID</td></tr>
+          <tr><td>Health / fitness features</td><td>None apply</td></tr>
+        </table>
+      </div>
+    </details>
+
+    <!-- 7. Store Listing -->
+    <details class="pc-accordion">
+      <summary>
+        <span class="pc-acc-chevron">▶</span><span class="pc-acc-num">7</span>
+        <span class="pc-acc-title">Store Listing</span>${ab(true, true)}
+      </summary>
+      <div class="pc-accordion-body">
+        <div class="pc-auto-pill">✓ Auto-generated — review and edit if needed</div>
+        <div class="pc-row">
+          <div class="pc-field">
+            <label class="pc-label">App category</label>
+            <select id="pc-category" class="pc-input" style="max-width:200px">
+              <option value="BUSINESS" ${(pc.app_category||'BUSINESS')==='BUSINESS'?'selected':''}>Business</option>
+              <option value="PRODUCTIVITY" ${pc.app_category==='PRODUCTIVITY'?'selected':''}>Productivity</option>
+              <option value="TOOLS" ${pc.app_category==='TOOLS'?'selected':''}>Tools</option>
+            </select>
+          </div>
+        </div>
+        <div class="pc-row">
+          <div class="pc-field" style="flex:1">
+            <label class="pc-label">Contact email <span class="pc-hint">shown in Play Store</span></label>
+            <input id="pc-contact-email" class="pc-input" type="email"
+                   value="${x(pc.contact_email||'')}" placeholder="email@example.com" />
+          </div>
+          <div class="pc-field" style="flex:1">
+            <label class="pc-label">Contact website</label>
+            <input id="pc-contact-web" class="pc-input" type="text"
+                   value="${x(pc.contact_website||'')}" placeholder="https://example.com" />
+          </div>
+        </div>
+        <div class="pc-row">
+          <div class="pc-field" style="flex:1">
+            <label class="pc-label">Short description <span class="pc-hint">max 80 chars</span></label>
+            <div class="pc-char-wrap">
+              <textarea id="pc-short-desc" class="pc-textarea" rows="2" maxlength="80"
+                        oninput="document.getElementById('pc-short-count').textContent=this.value.length"
+                        style="padding-right:52px"></textarea>
+              <span class="pc-counter" style="top:10px"><span id="pc-short-count">0</span> / 80</span>
+            </div>
+          </div>
+        </div>
+        <div class="pc-row">
+          <div class="pc-field" style="flex:1">
+            <label class="pc-label">Full description <span class="pc-hint">max 4000 chars</span></label>
+            <div class="pc-char-wrap">
+              <textarea id="pc-full-desc" class="pc-textarea" rows="9" maxlength="4000"
+                        oninput="document.getElementById('pc-full-count').textContent=this.value.length"
+                        style="padding-right:52px"></textarea>
+              <span class="pc-counter" style="top:10px"><span id="pc-full-count">0</span> / 4000</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </details>
+
+    <!-- 8. Release -->
+    <details class="pc-accordion">
+      <summary>
+        <span class="pc-acc-chevron">▶</span><span class="pc-acc-num">8</span>
+        <span class="pc-acc-title">Release (Name &amp; Notes)</span>${ab(true, true)}
+      </summary>
+      <div class="pc-accordion-body">
+        <div class="pc-auto-pill">✓ Auto-generated — review and edit if needed</div>
+        <div class="pc-row">
+          <div class="pc-field" style="flex:1">
+            <label class="pc-label">Release name <span class="pc-hint">max 50 chars · not shown to users</span></label>
+            <div class="pc-char-wrap">
+              <input id="pc-release-name" class="pc-input" type="text" maxlength="50"
+                     value="${x(pc.release_name||'')}"
+                     oninput="document.getElementById('pc-rn-count').textContent=this.value.length" />
+              <span class="pc-counter"><span id="pc-rn-count">${(pc.release_name||'').length}</span> / 50</span>
+            </div>
+          </div>
+        </div>
+        <div class="pc-row">
+          <div class="pc-field" style="flex:1">
+            <label class="pc-label">Release notes <span class="pc-hint">keep the &lt;en-US&gt; tags</span></label>
+            <div class="pc-char-wrap">
+              <textarea id="pc-release-notes" class="pc-textarea" rows="8" maxlength="500"
+                        oninput="document.getElementById('pc-notes-count').textContent=this.value.length"
+                        style="padding-right:52px;font-family:'Consolas',monospace;font-size:11px"></textarea>
+              <span class="pc-counter" style="top:10px"><span id="pc-notes-count">0</span> / 500</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </details>
+
+    <div class="pc-save-row">
+      <button class="btn btn-primary" onclick="savePcForm()">💾 Save All Sections</button>
+      <span class="version-info-tip">Stored in <code>play_console.json</code> — complete before submitting to Google Play</span>
+    </div>
+  </div>`;
+}
+
+async function savePcForm() {
+  if (!S.selectedCn) return;
+  const cn  = S.selectedCn;
+  const appType = document.querySelector(`input[name="pc-type-${cn}"]:checked`)?.value || "app";
+  const isPaid  = document.querySelector(`input[name="pc-paid-${cn}"]:checked`)?.value === "paid";
+  const body = {
+    // Section 1
+    app_name:             document.getElementById("pc-app-name")?.value?.trim() || "",
+    package_name:         document.getElementById("pc-pkg")?.value?.trim() || "",
+    default_language:     document.getElementById("pc-lang")?.value || "en-GB",
+    app_type:             appType,
+    is_free:              !isPaid,
+    policy_confirmed:     document.getElementById("pc-policy")?.checked || false,
+    signing_tos_accepted: document.getElementById("pc-signing")?.checked || false,
+    export_laws_accepted: document.getElementById("pc-export")?.checked || false,
+    // Section 2 (always auto)
+    app_access:           "all_available",
+    contains_ads:         false,
+    // Section 3
+    ratings_category:     "all_other",
+    ratings_email:        document.getElementById("pc-ratings-email")?.value?.trim() || "",
+    q_violence: false, q_sexual: false, q_teen_rating: false,
+    q_profanity: false, q_controlled_drugs: false, q_gambling: false,
+    q_user_generated: false, q_account_sharing: false, q_location_sharing: false,
+    ratings_iarc_agreed:  document.getElementById("pc-iarc")?.checked || false,
+    // Section 4
+    target_age:           "18_and_over",
+    legal_compliance:     document.getElementById("pc-legal")?.checked || false,
+    // Section 5
+    data_collection:      false,
+    families_policy:      false,
+    // Section 6
+    is_government:        false,
+    financial_features:   "none",
+    uses_advertising_id:  false,
+    health_features:      "none",
+    // Section 7
+    app_category:         document.getElementById("pc-category")?.value || "BUSINESS",
+    contact_email:        document.getElementById("pc-contact-email")?.value?.trim() || "",
+    contact_website:      document.getElementById("pc-contact-web")?.value?.trim() || "",
+    short_description:    document.getElementById("pc-short-desc")?.value?.trim() || "",
+    full_description:     document.getElementById("pc-full-desc")?.value?.trim() || "",
+    // Section 8
+    release_name:         document.getElementById("pc-release-name")?.value?.trim() || "",
+    release_notes:        document.getElementById("pc-release-notes")?.value || "",
+  };
+  try {
+    const res = await api("POST", `/api/v2/company/${cn}/play-console`, body);
+    toast("Play Console data saved", "success");
+    const badge = document.getElementById("pc-badge");
+    if (badge) badge.outerHTML = pcBadge(res);
+  } catch(e) {
+    toast("Save failed: " + e.message, "error");
   }
 }
 
@@ -1505,6 +1966,18 @@ function toast(msg, type = "info") {
   document.getElementById("toasts").appendChild(el);
   setTimeout(() => el.remove(), 4500);
 }
+
+// ── Tree click delegation ─────────────────────────────────────────────────────
+// Single listener on the document handles all .tree-btn clicks regardless of
+// when/how the tree HTML was injected via innerHTML.
+
+document.addEventListener("click", function(e) {
+  const btn = e.target.closest(".tree-btn");
+  if (!btn) return;
+  const row = btn.closest("[data-path]");
+  if (!row) return;
+  previewFile(row.dataset.path, row.dataset.name, +(row.dataset.size || 0));
+});
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 

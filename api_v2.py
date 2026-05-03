@@ -289,6 +289,137 @@ def _write_version(cn: str, name: str, version_code: int, version_name: str) -> 
     )
 
 
+def _read_manifest(cn: str, name: str) -> dict:
+    """Read the app's manifest.json; return {} if not found."""
+    f = _co_dir(cn, name) / "app" / "manifest.json"
+    if f.exists():
+        try:
+            return json.loads(f.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+    return {}
+
+
+def _pc_file(cn: str, name: str) -> Path:
+    return _co_dir(cn, name) / "app" / "play_console.json"
+
+
+def _read_pc(cn: str, name: str, application_id: str = "", manifest: dict | None = None,
+             assigned_email: str = "", domain: str = "") -> dict:
+    """Return saved Play Console data, pre-filled with low-review-risk defaults."""
+    if manifest is None:
+        manifest = {}
+
+    role_noun        = str(manifest.get("role_noun") or "staff")
+    role_verb_start  = str(manifest.get("role_verb_start") or "start")
+    role_verb_end    = str(manifest.get("role_verb_end") or "end")
+    export_title     = str(manifest.get("export_title") or "Work Log")
+    display_name     = str(manifest.get("display_name") or name)
+    support_email    = assigned_email or str(manifest.get("support_email") or "")
+    domain_val       = domain or str(manifest.get("domain") or "")
+
+    short_desc = f"{display_name[:22]} — {role_noun.capitalize()} shift & hours tracker"[:80]
+
+    full_desc = (
+        f"Manage {role_noun} schedules and track working hours with ease.\n\n"
+        f"{display_name} provides a simple, reliable solution for UK businesses to "
+        f"record {role_noun} shifts, monitor attendance, and export time logs for payroll.\n\n"
+        f"Key features:\n"
+        f"• Log shift {role_verb_start} and {role_verb_end} times instantly\n"
+        f"• View weekly schedule at a glance\n"
+        f"• Export {export_title} reports\n"
+        f"• Secure and private — data stays on your device\n"
+        f"• Designed for UK Working Time Regulations compliance\n\n"
+        f"Simple, fast, and built for everyday reliability."
+    )
+
+    defaults: dict = {
+        # 1. Create App
+        "app_name":             name[:30],
+        "package_name":         application_id or "",
+        "default_language":     "en-GB",
+        "app_type":             "app",
+        "is_free":              True,
+        "policy_confirmed":     False,
+        "signing_tos_accepted": False,
+        "export_laws_accepted": False,
+        # 2. App Content
+        "app_access":           "all_available",
+        "contains_ads":         False,
+        # 3. Content Ratings
+        "ratings_category":     "all_other",
+        "ratings_email":        support_email,
+        "q_violence":           False,
+        "q_sexual":             False,
+        "q_teen_rating":        False,
+        "q_profanity":          False,
+        "q_controlled_drugs":   False,
+        "q_gambling":           False,
+        "q_user_generated":     False,
+        "q_account_sharing":    False,
+        "q_location_sharing":   False,
+        "ratings_iarc_agreed":  False,
+        # 4. Target Audience
+        "target_age":           "18_and_over",
+        "legal_compliance":     False,
+        # 5. Data Safety
+        "data_collection":      False,
+        "families_policy":      False,
+        # 6. Policy Declarations
+        "is_government":        False,
+        "financial_features":   "none",
+        "uses_advertising_id":  False,
+        "health_features":      "none",
+        # 7. Store Listing
+        "app_category":         "BUSINESS",
+        "contact_email":        support_email,
+        "contact_website":      f"https://{domain_val}" if domain_val else "",
+        "short_description":    short_desc,
+        "full_description":     full_desc[:4000],
+        # 8. Release
+        "release_name":         "",
+        "release_notes":        (
+            f"<en-US>\n"
+            f"Initial release of {display_name}.\n\n"
+            f"• {role_noun.capitalize()} shift {role_verb_start} and {role_verb_end} time logging\n"
+            f"• Weekly schedule overview\n"
+            f"• Export {export_title} reports\n"
+            f"• Designed for UK Working Time Regulations compliance\n"
+            f"</en-US>"
+        ),
+    }
+
+    f = _pc_file(cn, name)
+    if f.exists():
+        try:
+            saved = json.loads(f.read_text(encoding="utf-8"))
+            defaults.update(saved)
+        except Exception:
+            pass
+
+    if application_id and not defaults.get("package_name"):
+        defaults["package_name"] = application_id
+
+    return defaults
+
+
+def _write_pc(cn: str, name: str, data: dict) -> None:
+    f = _pc_file(cn, name)
+    f.parent.mkdir(parents=True, exist_ok=True)
+    f.write_text(json.dumps(data, indent=2), encoding="utf-8")
+
+
+def _build_pc(cn: str, name: str, app_id: str, manifest: dict,
+              assigned_email: str, domain: str) -> dict:
+    """Assemble Play Console data, backfilling release_name from version.json."""
+    pc = _read_pc(cn, name, app_id, manifest=manifest,
+                  assigned_email=assigned_email, domain=domain)
+    if not pc.get("release_name"):
+        ver = _read_version(cn, name)
+        pc["release_name"] = ver.get("version_name", "1.0")
+    return pc
+
+
 def _rmdir(path: Path) -> None:
     """Remove a directory and all its contents, silently."""
     try:
@@ -449,9 +580,14 @@ def v2_company(cn):
     if not row:
         return jsonify({"error": "Not found"}), 404
 
-    name  = str(row.get("Company Name") or "")
-    cdir  = _co_dir(cn, name)
-    stages = _compute_stages(cn, row)
+    name     = str(row.get("Company Name") or "")
+    cdir     = _co_dir(cn, name)
+    stages   = _compute_stages(cn, row)
+    manifest    = _read_manifest(cn, name)
+    app_id      = str(manifest.get("application_id") or "")
+    privacy_url = str(manifest.get("privacy_policy_url") or "")
+    a_email     = str(row.get("Assigned Email") or "")
+    domain_val  = str(row.get("Domain") or "")
 
     jobs = {}
     for s in STAGE_ORDER:
@@ -459,23 +595,25 @@ def v2_company(cn):
         if j: jobs[s] = {k: v for k, v in j.items() if k != "log"}
 
     return jsonify({
-        "cn":            cn,
-        "name":          name,
-        "status":        str(row.get("Status") or ""),
-        "type":          str(row.get("Type") or ""),
-        "sic":           str(row.get("SIC Codes") or ""),
-        "address":       str(row.get("Address") or ""),
-        "directors":     str(row.get("Directors") or ""),
-        "nationalities": str(row.get("Director Nationalities") or ""),
-        "dobs":          str(row.get("Director DOB") or ""),
-        "genders":       str(row.get("Director Gender") or ""),
-        "buvei_first":   str(row.get("Buvei First Name") or ""),
-        "buvei_last":    str(row.get("Buvei Last Name") or ""),
-        "duns":          str(row.get("DUNS Number") or ""),
-        "domain":        str(row.get("Domain") or ""),
-        "email":         str(row.get("Assigned Email") or ""),
-        "account_name":  str(row.get("Account Name") or ""),
-        "stages":        stages,
+        "cn":               cn,
+        "name":             name,
+        "status":           str(row.get("Status") or ""),
+        "type":             str(row.get("Type") or ""),
+        "sic":              str(row.get("SIC Codes") or ""),
+        "address":          str(row.get("Address") or ""),
+        "directors":        str(row.get("Directors") or ""),
+        "nationalities":    str(row.get("Director Nationalities") or ""),
+        "dobs":             str(row.get("Director DOB") or ""),
+        "genders":          str(row.get("Director Gender") or ""),
+        "buvei_first":      str(row.get("Buvei First Name") or ""),
+        "buvei_last":       str(row.get("Buvei Last Name") or ""),
+        "duns":             str(row.get("DUNS Number") or ""),
+        "domain":           str(row.get("Domain") or ""),
+        "email":            str(row.get("Assigned Email") or ""),
+        "account_name":     str(row.get("Account Name") or ""),
+        "application_id":   app_id,
+        "privacy_policy_url": privacy_url,
+        "stages":           stages,
         "files": {
             "certificate":   _ls(cdir / "certificate", exts=[".pdf"]),
             "director_id":   _ls(cdir / "director_id",
@@ -483,9 +621,10 @@ def v2_company(cn):
             "app":           _ls(cdir / "app" / "artifacts", exts=[".apk", ".aab"]),
             "payment_profile": [_pp(cdir)] if _pp(cdir) else [],
         },
-        "tree":          _tree(cdir),
-        "version":       _read_version(cn, name),
-        "jobs":          jobs,
+        "tree":             _tree(cdir),
+        "version":          _read_version(cn, name),
+        "play_console":     _build_pc(cn, name, app_id, manifest, a_email, domain_val),
+        "jobs":             jobs,
     })
 
 
@@ -636,6 +775,54 @@ def v2_set_version(cn):
     name = str(row.get("Company Name") or "")
     _write_version(cn, name, vc, vn)
     return jsonify({"status": "saved", "version_code": vc, "version_name": vn})
+
+
+@api_v2.route("/api/v2/company/<cn>/play-console", methods=["POST"])
+def v2_save_play_console(cn):
+    """Save all Play Console form sections for a company."""
+    row = _find_row(cn)
+    if not row:
+        return jsonify({"error": "Company not found"}), 404
+    body = request.get_json(force=True, silent=True) or {}
+    name = str(row.get("Company Name") or "")
+
+    app_name = str(body.get("app_name", "")).strip()
+    if not app_name:
+        return jsonify({"error": "app_name is required"}), 400
+    if len(app_name) > 30:
+        return jsonify({"error": "app_name must be ≤ 30 characters"}), 400
+    pkg = str(body.get("package_name", "")).strip()
+    if len(pkg) > 150:
+        return jsonify({"error": "package_name must be ≤ 150 characters"}), 400
+    short_desc = str(body.get("short_description", ""))
+    if len(short_desc) > 80:
+        return jsonify({"error": "short_description must be ≤ 80 characters"}), 400
+    full_desc = str(body.get("full_description", ""))
+    if len(full_desc) > 4000:
+        return jsonify({"error": "full_description must be ≤ 4000 characters"}), 400
+
+    _STR = [
+        "app_name", "package_name", "default_language", "app_type", "app_access",
+        "ratings_category", "ratings_email", "target_age", "financial_features",
+        "health_features", "app_category", "contact_email", "contact_website",
+        "short_description", "full_description",
+        "release_name", "release_notes",
+    ]
+    _BOOL = [
+        "is_free", "policy_confirmed", "signing_tos_accepted", "export_laws_accepted",
+        "contains_ads", "q_violence", "q_sexual", "q_teen_rating", "q_profanity",
+        "q_controlled_drugs", "q_gambling", "q_user_generated", "q_account_sharing",
+        "q_location_sharing", "ratings_iarc_agreed", "legal_compliance",
+        "data_collection", "families_policy", "is_government", "uses_advertising_id",
+    ]
+    data: dict = {}
+    for f in _STR:
+        data[f] = str(body.get(f, "")).strip()
+    for f in _BOOL:
+        data[f] = bool(body.get(f, False))
+
+    _write_pc(cn, name, data)
+    return jsonify({"status": "saved", **data})
 
 
 @api_v2.route("/api/v2/company/<cn>/rerun-id", methods=["POST"])
