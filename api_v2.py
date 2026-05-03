@@ -718,29 +718,32 @@ def v2_search():
             })
 
     # Fall back to CH API if nothing found locally
+    ch_error = None
     if not results:
         try:
             sys.path.insert(0, str(ROOT))
             from run_pipeline import ch_get
-            r = ch_get(f"/search/companies?q={q}&items_per_page=8")
-            if r and r.status_code == 200:
-                for item in r.json().get("items", []):
-                    if item.get("company_status", "").lower() != "active": continue
-                    item_cn = _cn8(item.get("company_number", ""))
-                    # Skip if already in local list
-                    if any(x["cn"] == item_cn for x in results): continue
-                    results.append({
-                        "cn":        item_cn,
-                        "name":      item.get("title", ""),
-                        "directors": "",
-                        "n_done":    0,
-                        "stages":    {s: False for s in STAGE_ORDER},
-                        "source":    "ch_api",
-                    })
+            data = ch_get(f"/search/companies?q={q}&items_per_page=8")
+            for item in (data.get("items") or []):
+                if item.get("company_status", "").lower() != "active": continue
+                item_cn = _cn8(item.get("company_number", ""))
+                if any(c["cn"] == item_cn for c in results): continue
+                results.append({
+                    "cn":        item_cn,
+                    "name":      item.get("title", ""),
+                    "directors": "",
+                    "n_done":    0,
+                    "stages":    {s: False for s in STAGE_ORDER},
+                    "source":    "ch_api",
+                })
         except Exception as e:
+            ch_error = str(e)
             print(f"  CH search error: {e}")
 
-    return jsonify(results[:10])
+    resp: dict = {"results": results[:10]}
+    if ch_error:
+        resp["ch_error"] = ch_error
+    return jsonify(resp)
 
 
 @api_v2.route("/api/v2/company/add", methods=["POST"])

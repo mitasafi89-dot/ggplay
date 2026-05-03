@@ -731,6 +731,27 @@
     }
     .pc-textarea:focus { border-color: var(--blue); }
 
+    /* ── PC Insights panel ── */
+    .pc-insights { border: 1px solid rgba(210,153,34,.35); border-radius: 8px; margin-bottom: 10px; overflow: hidden; }
+    .pc-insights-head {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 9px 14px; cursor: pointer; user-select: none;
+      background: rgba(210,153,34,.07); transition: background .1s;
+    }
+    .pc-insights-head:hover { background: rgba(210,153,34,.13); }
+    .pc-insights-label { font-size: 12px; font-weight: 700; color: var(--yellow); display: flex; align-items: center; gap: 6px; }
+    .pc-insights-chevron { font-size: 9px; color: var(--yellow); transition: transform .15s; }
+    .pc-insights.open .pc-insights-chevron { transform: rotate(180deg); }
+    .pc-insights-body { display: none; padding: 12px 14px; background: var(--bg); border-top: 1px solid rgba(210,153,34,.2); }
+    .pc-insights.open .pc-insights-body { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
+    @media (max-width: 800px) { .pc-insights.open .pc-insights-body { grid-template-columns: 1fr; } }
+    .pc-ig-title { font-size: 10px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; margin-bottom: 7px; }
+    .pc-ig-item { display: flex; gap: 7px; font-size: 12px; line-height: 1.45; margin-bottom: 5px; }
+    .pc-ig-item:last-child { margin-bottom: 0; }
+    .pc-ig-dot { flex-shrink: 0; margin-top: 1px; }
+    .pc-ig-val { font-weight: 700; color: var(--text); }
+    .pc-ig-why { color: var(--muted); font-size: 11px; }
+
     /* ── Tree file: button + download icon ── */
     .tree-btn {
       background: none; border: none; cursor: pointer;
@@ -1355,6 +1376,85 @@ function renderPcSection(d, pc) {
       <span id="pc-badge">${pcBadge(pc)}</span>
     </div>
 
+    <!-- Insights panel -->
+    <div class="pc-insights open" id="pc-insights">
+      <div class="pc-insights-head" onclick="this.closest('.pc-insights').classList.toggle('open')">
+        <span class="pc-insights-label">💡 Play Console Quick Guide</span>
+        <span class="pc-insights-chevron">▲</span>
+      </div>
+      <div class="pc-insights-body">
+
+        <div>
+          <div class="pc-ig-title">🚀 Fastest path to live</div>
+          <div class="pc-ig-item"><span class="pc-ig-dot" style="color:var(--green)">✓</span><span>
+            <span class="pc-ig-val">Closed Testing first</span> — not Production<br>
+            <span class="pc-ig-why">Google reviews in hours vs 3–7 days. Once approved, promote to Production same day.</span>
+          </span></div>
+          <div class="pc-ig-item"><span class="pc-ig-dot" style="color:var(--green)">✓</span><span>
+            <span class="pc-ig-val">1 tester is enough</span><br>
+            <span class="pc-ig-why">Add your own Gmail. No real testers needed for review.</span>
+          </span></div>
+          <div class="pc-ig-item"><span class="pc-ig-dot" style="color:var(--green)">✓</span><span>
+            <span class="pc-ig-val">United Kingdom only</span> to start<br>
+            <span class="pc-ig-why">Minimises compliance surface. Add more countries later — no re-review.</span>
+          </span></div>
+          <div class="pc-ig-item"><span class="pc-ig-dot" style="color:var(--yellow)">⚡</span><span>
+            <span class="pc-ig-val">Internal Testing first</span> (optional)<br>
+            <span class="pc-ig-why">No review needed — gives the app a history before Closed Testing.</span>
+          </span></div>
+        </div>
+
+        <div>
+          <div class="pc-ig-title">⚙️ Settings to select on Play Console</div>
+          <div class="pc-ig-item"><span class="pc-ig-dot" style="color:var(--orange)">→</span><span>
+            <span class="pc-ig-val">Target audience → 18 and over</span><br>
+            <span class="pc-ig-why">Play Console defaults to 0+ — you must manually change this.</span>
+          </span></div>
+          <div class="pc-ig-item"><span class="pc-ig-dot" style="color:var(--orange)">→</span><span>
+            <span class="pc-ig-val">App category → Business</span><br>
+            <span class="pc-ig-why">Play Console suggests "Tools" — change to Business for correct placement.</span>
+          </span></div>
+          <div class="pc-ig-item"><span class="pc-ig-dot" style="color:var(--orange)">→</span><span>
+            <span class="pc-ig-val">Ads → No ads</span><br>
+            <span class="pc-ig-why">Must be declared explicitly even though the app has none.</span>
+          </span></div>
+          <div class="pc-ig-item"><span class="pc-ig-dot" style="color:var(--orange)">→</span><span>
+            <span class="pc-ig-val">Data safety → No data collected</span><br>
+            <span class="pc-ig-why">All questions answered No. Fastest data safety form path.</span>
+          </span></div>
+          <div class="pc-ig-item"><span class="pc-ig-dot" style="color:var(--orange)">→</span><span>
+            <span class="pc-ig-val">Content ratings → All Other App Types</span><br>
+            <span class="pc-ig-why">All 9 IARC questions = No. Lowest age rating, least scrutiny.</span>
+          </span></div>
+        </div>
+
+        <div>
+          <div class="pc-ig-title">📋 Required before review</div>
+          <div class="pc-ig-item"><span class="pc-ig-dot" style="color:var(--red)">!</span><span>
+            <span class="pc-ig-val">2+ phone screenshots</span><br>
+            <span class="pc-ig-why">Mandatory. Min 320px, max 3840px. Only item not auto-generated.</span>
+          </span></div>
+          <div class="pc-ig-item"><span class="pc-ig-dot" style="color:var(--red)">!</span><span>
+            <span class="pc-ig-val">Short + full description</span><br>
+            <span class="pc-ig-why">Auto-generated in Section 7 — copy-paste into Play Console.</span>
+          </span></div>
+          <div class="pc-ig-item"><span class="pc-ig-dot" style="color:var(--red)">!</span><span>
+            <span class="pc-ig-val">Privacy policy URL</span><br>
+            <span class="pc-ig-why">Generated by the App stage. Shown in Section 1.</span>
+          </span></div>
+          <div class="pc-ig-item"><span class="pc-ig-dot" style="color:var(--red)">!</span><span>
+            <span class="pc-ig-val">Content rating questionnaire</span><br>
+            <span class="pc-ig-why">Must be submitted on Play Console — takes 2 minutes.</span>
+          </span></div>
+          <div class="pc-ig-item"><span class="pc-ig-dot" style="color:var(--muted)">·</span><span>
+            <span class="pc-ig-val">Release notes</span><br>
+            <span class="pc-ig-why">Auto-generated in Section 8 — paste into Play Console release form.</span>
+          </span></div>
+        </div>
+
+      </div>
+    </div>
+
     <!-- 1. Create App -->
     <details class="pc-accordion"${!s1ok ? ' open' : ''}>
       <summary>
@@ -1870,21 +1970,29 @@ document.getElementById("add-input").addEventListener("input", e => {
 });
 
 async function doAddSearch(q) {
+  const status = document.getElementById("add-status");
+  const el     = document.getElementById("add-results");
   try {
-    const results = await api("GET", `/api/v2/company/search?q=${encodeURIComponent(q)}`);
-    const status  = document.getElementById("add-status");
-    const el      = document.getElementById("add-results");
+    const resp    = await api("GET", `/api/v2/company/search?q=${encodeURIComponent(q)}`);
+    // Support both old array shape and new {results, ch_error} shape
+    const results = Array.isArray(resp) ? resp : (resp.results || []);
+    const chErr   = Array.isArray(resp) ? null  : resp.ch_error;
+
     if (!results.length) {
-      status.textContent = "No results found.";
+      const errNote = chErr
+        ? `<span style="color:var(--red);font-size:11px">⚠ CH API: ${x(chErr)}</span><br>Enter the 8-digit company number directly to add manually.`
+        : `No results found. Try the company number (e.g. <code>01234567</code>).`;
+      status.innerHTML = errNote;
       el.innerHTML = "";
       return;
     }
     status.textContent = `${results.length} result${results.length > 1 ? "s" : ""} — click to add`;
+    if (chErr) status.innerHTML += ` <span style="color:var(--orange);font-size:11px">(local only — CH: ${x(chErr)})</span>`;
     el.innerHTML = results.map(r => {
       const badge = r.source === "local"
         ? `<span class="badge badge-green">${r.n_done}/7 done</span>`
         : `<span class="badge badge-gray">Companies House</span>`;
-      return `<div class="sri" onclick="addCompany('${r.cn}','${r.name.replace(/'/g,"\\'")}')">
+      return `<div class="sri" data-cn="${x(r.cn)}" data-name="${x(r.name)}">
         <div>
           <div class="sri-name">${x(r.name)}</div>
           <div class="sri-sub">${r.cn}${r.directors ? " · " + x(r.directors.split(";")[0]) : ""}</div>
@@ -1892,8 +2000,11 @@ async function doAddSearch(q) {
         <div class="sri-right">${badge}</div>
       </div>`;
     }).join("");
+    el.querySelectorAll(".sri[data-cn]").forEach(row => {
+      row.addEventListener("click", () => addCompany(row.dataset.cn, row.dataset.name));
+    });
   } catch(e) {
-    document.getElementById("add-status").textContent = "Search failed: " + e.message;
+    status.textContent = "Search failed: " + e.message;
   }
 }
 
