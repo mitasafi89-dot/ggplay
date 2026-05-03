@@ -524,9 +524,13 @@ def _exec_stage(cn: str, stage: str, row: dict):
     elif stage == "email":
         from email_pool import EmailPool
         pool = EmailPool()
-        ex = pool.get_assigned_email(cn)
-        if ex:
-            return {"email": ex, "status": "already_assigned"}
+        ex_email, ex_first, ex_last = pool.get_assigned_email(cn)
+        if ex_email:
+            # Already assigned in pool — sync to Excel if missing
+            if not str(row.get("Assigned Email") or ""):
+                _update_excel_row(cn, {"Assigned Email": ex_email,
+                                       "Account Name": f"{ex_first} {ex_last}"})
+            return {"email": ex_email, "status": "already_assigned"}
         email, first, last = pool.assign_next(company_number=cn, company_name=name)
         _update_excel_row(cn, {"Assigned Email": email,
                                 "Account Name": f"{first} {last}"})
