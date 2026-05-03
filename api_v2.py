@@ -500,8 +500,8 @@ def _exec_stage(cn: str, stage: str, row: dict):
 
     elif stage == "certificate":
         _clean_stage_output(cn, name, "certificate")
-        from run_pipeline import download_certificate, _company_dir
-        out = os.path.join(_company_dir(cn, name), "certificate")
+        from run_pipeline import download_certificate
+        out = str(_co_dir(cn, name) / "certificate")
         path, err = download_certificate(cn, out)
         if path:
             _update_excel_row(cn, {"Certificate Downloaded": True, "Certificate Path": path})
