@@ -4,7 +4,7 @@ Register with:  from api_v2 import api_v2; app.register_blueprint(api_v2)
 """
 from __future__ import annotations
 
-import io, json, os, re, shutil, sys, threading, traceback
+import io, json, os, re, shutil, sys, threading, time, traceback
 from datetime import datetime
 from pathlib import Path
 
@@ -40,9 +40,10 @@ def _jk(cn: str, stage: str) -> str:
 def _job_get(cn: str, stage: str) -> dict:
     with _LOCK:
         j = dict(_JOBS.get(_jk(cn, stage), {}))
-    cap = j.pop("_cap", None)
-    if cap:
-        j["log"] = cap.get_log()
+    if j.get("status") == "running":
+        live = _TEE.get_log(_jk(cn, stage))
+        if live:
+            j["log"] = live
     return j
 
 
@@ -52,49 +53,79 @@ def _job_set(cn: str, stage: str, **kw) -> None:
 
 
 # ── Stdout capture ─────────────────────────────────────────────────────────
+# Single global _TEE is installed at sys.stdout once. Each worker thread calls
+# _TEE.bind(key) so its prints are routed to its own buffer; no global
+# sys.stdout replacement, no race condition between concurrent jobs.
+
+_TEE_LOCK = threading.Lock()
+
 
 class _Tee:
+    """Global stdout multiplexer — installed once at module load."""
+
     def __init__(self):
         self._real = sys.__stdout__
-        self._buf: list[str] = []
-        self._mu = threading.Lock()
+        self._local = threading.local()
+        self._logs: dict[str, list[str]] = {}  # key → chunks
+
+    def bind(self, key: str) -> None:
+        self._local.key = key
+        with _TEE_LOCK:
+            self._logs[key] = []
+
+    def get_log(self, key: str) -> str:
+        with _TEE_LOCK:
+            return "".join(self._logs.get(key, []))
+
+    def unbind(self) -> str:
+        key = getattr(self._local, "key", None)
+        log = ""
+        if key:
+            with _TEE_LOCK:
+                log = "".join(self._logs.pop(key, []))
+            self._local.key = None
+        return log
 
     def write(self, s: str) -> int:
         if s:
             try: self._real.write(s); self._real.flush()
             except Exception: pass
-            with self._mu: self._buf.append(s)
+            key = getattr(self._local, "key", None)
+            if key:
+                with _TEE_LOCK:
+                    if key in self._logs:
+                        self._logs[key].append(s)
         return len(s) if s else 0
 
     def flush(self):
         try: self._real.flush()
         except Exception: pass
 
-    def get_log(self) -> str:
-        with self._mu: return "".join(self._buf)
+
+_TEE = _Tee()
+sys.stdout = _TEE
 
 
 def _spawn(cn: str, stage: str, fn) -> None:
     """Run fn() in a daemon thread, tracking job state and capturing stdout."""
-    cap = _Tee()
+    key = _jk(cn, stage)
     _job_set(cn, stage, status="running", started_at=datetime.now().isoformat(),
-             finished_at=None, error=None, log=None, _cap=cap)
+             finished_at=None, error=None, log=None)
 
     def _worker():
-        old = sys.stdout
-        sys.stdout = cap
+        _TEE.bind(key)
         try:
             result = fn()
-            sys.stdout = old
+            log = _TEE.unbind()
             _job_set(cn, stage, status="done",
                      finished_at=datetime.now().isoformat(),
-                     log=cap.get_log(), _cap=None, result=str(result)[:500])
+                     log=log, result=str(result)[:500])
         except Exception as e:
-            sys.stdout = old
+            log = _TEE.unbind()
             _job_set(cn, stage, status="failed",
                      finished_at=datetime.now().isoformat(),
-                     error=str(e), log=cap.get_log() + "\n" + traceback.format_exc(),
-                     _cap=None)
+                     error=str(e),
+                     log=log + "\n" + traceback.format_exc())
 
     threading.Thread(target=_worker, daemon=True).start()
 
@@ -114,18 +145,31 @@ def _co_dir(cn: str, name: str = "") -> Path:
     return COMP_DIR / folder
 
 
+_ROWS_CACHE: tuple[float, list[dict]] | None = None  # (mtime, rows)
+
+
 def _all_rows() -> list[dict]:
+    global _ROWS_CACHE
     if not EXCEL.exists():
         return []
     try:
-        wb = openpyxl.load_workbook(EXCEL, data_only=True)
+        mtime = EXCEL.stat().st_mtime
+        if _ROWS_CACHE and _ROWS_CACHE[0] == mtime:
+            return _ROWS_CACHE[1]
+        wb = openpyxl.load_workbook(EXCEL, data_only=True, read_only=True)
         ws = wb.active
-        hdr = [str(c.value or "").strip() for c in ws[1]]
+        rows_iter = ws.iter_rows(values_only=True)
+        hdr_row = next(rows_iter, None)
+        if not hdr_row:
+            wb.close()
+            return []
+        hdr = [str(v or "").strip() for v in hdr_row]
         rows = []
-        for row in ws.iter_rows(min_row=2, values_only=True):
+        for row in rows_iter:
             if not row or not row[0]: continue
             rows.append({hdr[i]: (row[i] if i < len(row) else None) for i in range(len(hdr))})
         wb.close()
+        _ROWS_CACHE = (mtime, rows)
         return rows
     except Exception:
         return []
@@ -445,8 +489,8 @@ def _clean_stage_output(cn: str, name: str, stage: str) -> None:
                     except Exception: pass
 
 
-def _tree(path: Path) -> dict | None:
-    """Return a nested tree dict for path. Dirs first, then files, both sorted by name."""
+def _tree_node(path: Path) -> dict | None:
+    """Recursive tree builder (no caching — called by _tree which caches root)."""
     if not path.exists():
         return None
     if path.is_file():
@@ -456,12 +500,45 @@ def _tree(path: Path) -> dict | None:
     try:
         for child in sorted(path.iterdir(),
                             key=lambda p: (p.is_file(), p.name.lower())):
-            node = _tree(child)
+            node = _tree_node(child)
             if node:
                 children.append(node)
     except PermissionError:
         pass
     return {"name": path.name, "type": "dir", "children": children}
+
+
+_TREE_CACHE: dict[str, tuple[float, dict | None]] = {}  # path → (ts, result)
+_TREE_TTL = 10.0  # seconds
+
+
+def _tree(path: Path) -> dict | None:
+    """Return a nested tree dict, cached for _TREE_TTL seconds per root path."""
+    key = str(path)
+    now = time.monotonic()
+    entry = _TREE_CACHE.get(key)
+    if entry and now - entry[0] < _TREE_TTL:
+        return entry[1]
+    result = _tree_node(path)
+    _TREE_CACHE[key] = (now, result)
+    return result
+
+
+# ── Retry helper ───────────────────────────────────────────────────────────
+
+def _with_retry(fn, retries: int = 3, delay: float = 2.0):
+    """Call fn(); on exception retry up to retries times with exponential backoff."""
+    last_exc: Exception | None = None
+    for attempt in range(retries):
+        try:
+            return fn()
+        except Exception as e:
+            last_exc = e
+            if attempt < retries - 1:
+                wait = delay * (2 ** attempt)
+                print(f"  [retry {attempt + 1}/{retries}] {e} — retrying in {wait:.0f}s")
+                time.sleep(wait)
+    raise last_exc  # type: ignore[misc]
 
 
 # ── Core stage executor ────────────────────────────────────────────────────
@@ -473,7 +550,7 @@ def _exec_stage(cn: str, stage: str, row: dict):
 
     if stage == "details":
         from run_pipeline import get_company_details
-        d = get_company_details(cn)
+        d = _with_retry(lambda: get_company_details(cn))
         _update_excel_row(cn, {
             "Company Name":           d.get("company_name", ""),
             "Status":                 d.get("company_status", ""),
@@ -502,7 +579,7 @@ def _exec_stage(cn: str, stage: str, row: dict):
         _clean_stage_output(cn, name, "certificate")
         from run_pipeline import download_certificate
         out = str(_co_dir(cn, name) / "certificate")
-        path, err = download_certificate(cn, out)
+        path, err = _with_retry(lambda: download_certificate(cn, out))
         if path:
             _update_excel_row(cn, {"Certificate Downloaded": True, "Certificate Path": path})
         return {"path": path, "error": err}
@@ -665,25 +742,23 @@ def v2_run_all(cn):
                 fresh = _find_row(cn) or {}
                 if _compute_stages(cn, fresh).get(stage):
                     continue  # already done
-                cap = _Tee()
+                key = _jk(cn, stage)
                 _job_set(cn, stage, status="running",
                          started_at=datetime.now().isoformat(),
-                         finished_at=None, error=None, _cap=cap)
-                old = sys.stdout
-                sys.stdout = cap
+                         finished_at=None, error=None, log=None)
+                _TEE.bind(key)
                 try:
                     _exec_stage(cn, stage, _find_row(cn) or fresh)
-                    sys.stdout = old
+                    log = _TEE.unbind()
                     _job_set(cn, stage, status="done",
                              finished_at=datetime.now().isoformat(),
-                             log=cap.get_log(), _cap=None)
+                             log=log)
                 except Exception as e:
-                    sys.stdout = old
+                    log = _TEE.unbind()
                     _job_set(cn, stage, status="failed",
                              finished_at=datetime.now().isoformat(),
                              error=str(e),
-                             log=cap.get_log() + "\n" + traceback.format_exc(),
-                             _cap=None)
+                             log=log + "\n" + traceback.format_exc())
                     break  # stop on first failure
 
     threading.Thread(target=_seq, daemon=True).start()
@@ -860,3 +935,8 @@ def v2_download():
         return abort(404)
     inline = request.args.get("inline", "0") == "1"
     return send_file(abs_path, as_attachment=not inline)
+
+
+@api_v2.route("/health")
+def v2_health():
+    return jsonify({"status": "ok", "ts": datetime.now().isoformat()})

@@ -11,6 +11,7 @@ from __future__ import annotations
 import colorsys
 import hashlib
 from dataclasses import dataclass
+from functools import lru_cache
 
 
 @dataclass(frozen=True)
@@ -34,6 +35,7 @@ def _hue_from_name(name: str) -> float:
     return hue_deg / 360.0
 
 
+@lru_cache(maxsize=512)
 def palette_for(company_name: str) -> Palette:
     h = _hue_from_name(company_name)
 

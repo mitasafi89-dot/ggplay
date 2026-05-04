@@ -14,6 +14,7 @@ Usage:
 
 import os
 import re
+import threading
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment
 
@@ -76,6 +77,7 @@ class EmailPool:
         self.emails_file = emails_file or EMAILS_FILE
         self._emails = []
         self._assignments = {}  # email -> {company_number, company_name}
+        self._lock = threading.Lock()
         self._load()
 
     def _load(self):
@@ -140,25 +142,25 @@ class EmailPool:
 
         If company_number is provided and already has an assignment, returns that.
         """
-        # Check if company already has an email
-        if company_number:
-            existing = self.get_assigned_email(company_number)
-            if existing[0]:
-                return existing
+        with self._lock:
+            # Check if company already has an email
+            if company_number:
+                existing = self.get_assigned_email(company_number)
+                if existing[0]:
+                    return existing
 
-        # Find next unassigned email
-        for email in self._emails:
-            if email not in self._assignments:
-                first_name, last_name = extract_name_from_email(email)
+            # Find next unassigned email
+            for email in self._emails:
+                if email not in self._assignments:
+                    first_name, last_name = extract_name_from_email(email)
 
-                # Record assignment
-                self._assignments[email] = {
-                    "company_number": str(company_number) if company_number else "",
-                    "company_name": company_name,
-                }
-                self._save()
+                    self._assignments[email] = {
+                        "company_number": str(company_number) if company_number else "",
+                        "company_name": company_name,
+                    }
+                    self._save()
 
-                return email, first_name, last_name
+                    return email, first_name, last_name
 
         raise RuntimeError(f"No available emails! All {self.total} emails are assigned.")
 

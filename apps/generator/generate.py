@@ -44,7 +44,7 @@ SDK_DIR_DEFAULT = os.environ.get(
     "ANDROID_HOME",
     os.path.expanduser("~/Android/Sdk"),
 )
-DEFAULT_ARTIFACT = "both"
+DEFAULT_ARTIFACT = "aab"
 
 
 def _ensure_local_properties(sdk_dir: str = SDK_DIR_DEFAULT) -> None:
