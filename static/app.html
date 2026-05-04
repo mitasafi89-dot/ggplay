@@ -309,14 +309,14 @@
 
     .stage-status-col {
       display: flex;
-      align-items: center;
-      gap: 6px;
-      font-size: 12px;
-      font-weight: 600;
-      width: 86px;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 2px;
       flex-shrink: 0;
-      justify-content: flex-end;
+      min-width: 96px;
     }
+    .stage-status-row { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; }
+    .stage-timing { font-size: 10px; color: var(--muted); font-weight: 400; white-space: nowrap; }
     .sdot-status {
       width: 7px; height: 7px;
       border-radius: 50%;
@@ -695,9 +695,9 @@
       font-size: 10px; font-weight: 700; padding: 1px 7px;
       border-radius: 999px; border: 1px solid; flex-shrink: 0;
     }
-    .pc-acc-badge.auto { color: var(--green);  border-color: rgba(63,185,80,.4);  background: rgba(63,185,80,.07); }
-    .pc-acc-badge.done { color: var(--green);  border-color: rgba(63,185,80,.4);  background: rgba(63,185,80,.07); }
-    .pc-acc-badge.action { color: var(--orange); border-color: rgba(219,109,40,.4); background: rgba(219,109,40,.08); }
+    .pc-acc-badge.auto   { color: var(--muted);  border-color: var(--border);           background: var(--surface2); }
+    .pc-acc-badge.done   { color: var(--green);  border-color: rgba(63,185,80,.4);    background: rgba(63,185,80,.08); }
+    .pc-acc-badge.action { color: var(--orange); border-color: rgba(219,109,40,.4);   background: rgba(219,109,40,.08); }
     .pc-accordion-body { padding: 12px 14px; background: var(--bg); }
     .pc-auto-pill {
       display: inline-flex; align-items: center; gap: 4px;
@@ -828,6 +828,57 @@
       padding: 11px 18px; border-top: 1px solid var(--border); gap: 8px;
       flex-shrink: 0;
     }
+
+    /* ── Progress strip ── */
+    .progress-strip { height: 3px; background: var(--surface); flex-shrink: 0; }
+    .progress-fill  { height: 100%; background: var(--green); transition: width .5s ease; width: 0; }
+
+    /* ── Topbar running dot ── */
+    .topbar-running {
+      display: flex; align-items: center; gap: 5px;
+      font-size: 12px; color: var(--blue); font-weight: 600;
+    }
+    .topbar-running-dot {
+      width: 7px; height: 7px; border-radius: 50%; background: var(--blue);
+      animation: pulse .9s infinite; flex-shrink: 0;
+    }
+
+    /* ── Director chips ── */
+    .dir-chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 3px; }
+    .dir-chip {
+      display: inline-block; padding: 1px 8px;
+      background: var(--surface2); border: 1px solid var(--border);
+      border-radius: 999px; font-size: 11px; color: var(--text);
+      white-space: nowrap; max-width: 140px;
+      overflow: hidden; text-overflow: ellipsis;
+    }
+
+    /* ── SIC description ── */
+    .sic-desc { font-size: 11px; color: var(--muted); margin-top: 2px; line-height: 1.35; }
+
+    /* ── Info card action link (empty state) ── */
+    .ic-action {
+      font-size: 11px; color: var(--blue); cursor: pointer;
+      text-decoration: none; margin-left: 4px;
+      border-bottom: 1px dashed rgba(47,129,247,.4);
+    }
+    .ic-action:hover { color: #5aaaff; }
+
+    /* ── Inline copy button (DUNS) ── */
+    .ic-copy-btn {
+      background: none; border: none; cursor: pointer;
+      font-size: 11px; color: var(--muted); padding: 0 3px;
+      vertical-align: middle; opacity: 0; transition: opacity .1s;
+    }
+    .info-card:hover .ic-copy-btn { opacity: 1; }
+    .ic-copy-btn:hover { color: var(--text); }
+
+    /* ── Info card link value ── */
+    .ic-link { color: var(--blue); text-decoration: none; word-break: break-all; }
+    .ic-link:hover { text-decoration: underline; }
+
+    /* ── Log drawer enriched header ── */
+    .log-job-meta { font-size: 11px; color: var(--muted); font-weight: 400; }
   </style>
 </head>
 <body>
@@ -836,7 +887,14 @@
 <div class="topbar">
   <div class="topbar-logo">Company <span>Pipeline</span></div>
   <div class="topbar-spacer"></div>
+  <div id="topbar-running" class="topbar-running" style="display:none">
+    <div class="topbar-running-dot"></div>
+    <span id="topbar-running-label"></span>
+  </div>
   <div class="topbar-summary" id="topbar-summary"></div>
+</div>
+<div class="progress-strip" id="progress-strip" style="display:none">
+  <div class="progress-fill" id="progress-fill"></div>
 </div>
 
 <div class="layout">
@@ -946,15 +1004,56 @@ const STAGES = [
   { key: "app",         label: "Android App",         icon: "📱" },
 ];
 
+// ── SIC code lookup ───────────────────────────────────────────────────────────
+const SIC_LABELS = {
+  "6810":"Buying & selling own real estate","6820":"Letting of own real estate",
+  "6831":"Real estate agencies","6832":"Management of real estate",
+  "7010":"Activities of head offices","7021":"Public relations",
+  "7022":"Business & management consultancy","7112":"Engineering activities",
+  "7490":"Other professional activities","8299":"Other business support",
+  "4110":"Development of building projects","4120":"Construction — residential",
+  "4399":"Other specialist construction","4321":"Electrical installation",
+  "4322":"Plumbing, heating & air-conditioning",
+  "5610":"Restaurants & mobile food","5630":"Beverage serving",
+  "6201":"Computer programming","6202":"Computer consultancy","6209":"Other IT services",
+  "6491":"Financial leasing","6499":"Other financial services",
+  "4711":"Retail — non-specialised stores","4719":"Other retail",
+};
+
+function sicLabel(code) {
+  const c = String(code || "").trim();
+  return SIC_LABELS[c] || SIC_LABELS[c.slice(0, 4)] || null;
+}
+
+// ── Time formatting ───────────────────────────────────────────────────────────
+function fmtDuration(startIso, endIso) {
+  if (!startIso || !endIso) return null;
+  const ms = new Date(endIso) - new Date(startIso);
+  if (ms < 0) return null;
+  const s = Math.round(ms / 1000);
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60), rem = s % 60;
+  return `${m}m ${rem}s`;
+}
+
+function fmtRelTime(iso) {
+  if (!iso) return null;
+  const diff = Math.floor((Date.now() - new Date(iso)) / 1000);
+  if (diff < 60)   return "just now";
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+  return `${Math.floor(diff / 86400)}d ago`;
+}
+
 function stageDetail(key, d) {
   switch (key) {
-    case "details":     return d.address ? d.address.split(",").slice(0,2).join(",").trim() : "";
-    case "duns":        return d.duns || "";
-    case "certificate": return d.stages?.certificate ? "Downloaded" : "";
-    case "domain":      return d.domain || "";
-    case "email":       return d.email || "";
-    case "director_id": return d.stages?.director_id ? d.directors ? d.directors.split(";")[0].trim() : "Generated" : "";
-    case "app":         return d.stages?.app ? "Built" : "";
+    case "details":     return d.address ? `Address · ${d.address.split(",").slice(0,2).join(",").trim()}` : "";
+    case "duns":        return d.duns ? `DUNS · ${d.duns}` : "";
+    case "certificate": return d.stages?.certificate ? "✓ Downloaded" : "";
+    case "domain":      return d.domain ? `Domain · ${d.domain}` : "";
+    case "email":       return d.email ? `Email · ${d.email}` : "";
+    case "director_id": return d.stages?.director_id ? (d.directors ? d.directors.split(";")[0].trim() : "Generated") : "";
+    case "app":         return d.stages?.app ? "✓ Built" : "";
     default:            return "";
   }
 }
@@ -1064,6 +1163,22 @@ function renderSummary() {
     `<span style="color:var(--green)"><b>${complete}</b> complete</span>` +
     `<span style="color:var(--orange)"><b>${partial}</b> partial</span>` +
     `<span style="color:var(--muted)"><b>${pending}</b> pending</span>`;
+
+  // Progress strip
+  const totalStages = total * 7;
+  const doneStages  = S.companies.reduce((s, c) => s + (c.n_done || 0), 0);
+  const pct = totalStages > 0 ? (doneStages / totalStages * 100).toFixed(1) : 0;
+  const strip = document.getElementById("progress-strip");
+  const fill  = document.getElementById("progress-fill");
+  if (strip) strip.style.display = total > 0 ? "" : "none";
+  if (fill)  fill.style.width = pct + "%";
+
+  // Running indicator
+  const runningJobs = S.companies.reduce((s, c) => s + (c.running?.length || 0), 0);
+  const runEl  = document.getElementById("topbar-running");
+  const runLbl = document.getElementById("topbar-running-label");
+  if (runEl) runEl.style.display = runningJobs > 0 ? "" : "none";
+  if (runLbl) runLbl.textContent = `${runningJobs} running`;
 }
 
 // ── Render: Sidebar ───────────────────────────────────────────────────────────
@@ -1148,12 +1263,12 @@ function renderDetail() {
     </div>
 
     <div class="info-grid">
-      ${ic("Directors",  d.directors)}
-      ${ic("Address",    d.address)}
-      ${ic("SIC Codes",  d.sic)}
-      ${ic("DUNS",       d.duns, "mono")}
-      ${ic("Domain",     d.domain)}
-      ${ic("Email",      d.email)}
+      ${icDirectors(d.directors)}
+      ${icAddress(d.address)}
+      ${icSic(d.sic)}
+      ${icDuns(d.duns)}
+      ${icDomain(d.domain)}
+      ${icEmail(d.email)}
     </div>
 
     <div class="stages-section">
@@ -1229,6 +1344,13 @@ function buildStageRow(s, d) {
   const sub = stageDetail(s.key, d);
   const subHtml = sub ? `<div class="stage-sub">${x(sub)}</div>` : "";
 
+  // Timing — shown for done/failed jobs
+  const dur     = fmtDuration(job?.started_at, job?.finished_at);
+  const timeAgo = fmtRelTime(job?.finished_at || job?.started_at);
+  const timingHtml = (dur || timeAgo) && status !== "idle"
+    ? `<div class="stage-timing">${[dur, timeAgo].filter(Boolean).join(" · ")}</div>`
+    : "";
+
   // Buttons
   let btns = "";
   if (status === "running") {
@@ -1254,8 +1376,11 @@ function buildStageRow(s, d) {
       ${subHtml}
     </div>
     <div class="stage-status-col">
-      <div class="sdot-status ${status}"></div>
-      ${stLabel}
+      <div class="stage-status-row">
+        <div class="sdot-status ${status}"></div>
+        ${stLabel}
+      </div>
+      ${timingHtml}
     </div>
     <div class="stage-btns">${btns}</div>
   </div>`;
@@ -1318,6 +1443,79 @@ function ic(label, val, cls = "") {
   </div>`;
 }
 
+function icDirectors(val) {
+  const empty = !val || val === "None";
+  return `<div class="info-card">
+    <div class="info-label">Directors</div>
+    ${empty
+      ? `<div class="info-value empty">— <a class="ic-action" onclick="runStage('details')">Run Details →</a></div>`
+      : `<div class="dir-chips">${val.split(";").map(n => n.trim()).filter(Boolean)
+           .map(n => `<span class="dir-chip" title="${x(n)}">${x(n)}</span>`).join("")}</div>`
+    }
+  </div>`;
+}
+
+function icSic(val) {
+  const empty = !val || val === "None";
+  if (empty) return ic("SIC Codes", "");
+  const codes = String(val).split(/[,;]+/).map(s => s.trim()).filter(Boolean);
+  const items = codes.map(c => {
+    const lbl = sicLabel(c);
+    return lbl ? `<div>${x(c)} <span class="sic-desc">· ${x(lbl)}</span></div>`
+               : `<div>${x(c)}</div>`;
+  }).join("");
+  return `<div class="info-card"><div class="info-label">SIC Codes</div><div class="info-value" style="font-size:12px">${items}</div></div>`;
+}
+
+function icDuns(val) {
+  const empty = !val || val === "None";
+  return `<div class="info-card">
+    <div class="info-label">DUNS</div>
+    <div class="info-value mono ${empty ? "empty" : ""}">
+      ${empty
+        ? `— <a class="ic-action" onclick="runStage('duns')">Run DUNS stage →</a>`
+        : `${x(val)}<button class="ic-copy-btn" title="Copy DUNS" onclick="navigator.clipboard.writeText('${x(val)}').then(()=>toast('DUNS copied','success'))">⧉</button>`
+      }
+    </div>
+  </div>`;
+}
+
+function icDomain(val) {
+  const empty = !val || val === "None";
+  return `<div class="info-card">
+    <div class="info-label">Domain</div>
+    <div class="info-value ${empty ? "empty" : ""}">
+      ${empty
+        ? `— <a class="ic-action" onclick="runStage('domain')">Run Domain stage →</a>`
+        : `<a class="ic-link" href="https://${x(val)}" target="_blank" rel="noopener">${x(val)} ↗</a>`
+      }
+    </div>
+  </div>`;
+}
+
+function icEmail(val) {
+  const empty = !val || val === "None";
+  return `<div class="info-card">
+    <div class="info-label">Email</div>
+    <div class="info-value ${empty ? "empty" : ""}">
+      ${empty
+        ? `— <a class="ic-action" onclick="runStage('email')">Run Email stage →</a>`
+        : `<a class="ic-link" href="mailto:${x(val)}">${x(val)}</a>`
+      }
+    </div>
+  </div>`;
+}
+
+function icAddress(val) {
+  const empty = !val || val === "None";
+  if (empty) return ic("Address", "");
+  const lines = val.split(",").map(s => s.trim()).filter(Boolean);
+  return `<div class="info-card">
+    <div class="info-label">Address</div>
+    <div class="info-value" style="line-height:1.65;font-size:12px">${lines.map(l => x(l)).join("<br>")}</div>
+  </div>`;
+}
+
 // ── Version management ────────────────────────────────────────────────────────
 
 function bumpVC() {
@@ -1377,7 +1575,7 @@ function renderPcSection(d, pc) {
     </div>
 
     <!-- Insights panel -->
-    <div class="pc-insights open" id="pc-insights">
+    <div class="pc-insights" id="pc-insights">
       <div class="pc-insights-head" onclick="this.closest('.pc-insights').classList.toggle('open')">
         <span class="pc-insights-label">💡 Play Console Quick Guide</span>
         <span class="pc-insights-chevron">▲</span>
@@ -1456,7 +1654,7 @@ function renderPcSection(d, pc) {
     </div>
 
     <!-- 1. Create App -->
-    <details class="pc-accordion"${!s1ok ? ' open' : ''}>
+    <details class="pc-accordion">
       <summary>
         <span class="pc-acc-chevron">▶</span><span class="pc-acc-num">1</span>
         <span class="pc-acc-title">Create App</span>${ab(false, s1ok)}
@@ -1539,7 +1737,7 @@ function renderPcSection(d, pc) {
     </details>
 
     <!-- 3. Content Ratings -->
-    <details class="pc-accordion"${!s3ok ? ' open' : ''}>
+    <details class="pc-accordion">
       <summary>
         <span class="pc-acc-chevron">▶</span><span class="pc-acc-num">3</span>
         <span class="pc-acc-title">Content Ratings (IARC)</span>${ab(false, s3ok)}
@@ -1568,7 +1766,7 @@ function renderPcSection(d, pc) {
     </details>
 
     <!-- 4. Target Audience -->
-    <details class="pc-accordion"${!s4ok ? ' open' : ''}>
+    <details class="pc-accordion">
       <summary>
         <span class="pc-acc-chevron">▶</span><span class="pc-acc-num">4</span>
         <span class="pc-acc-title">Target Audience &amp; Content</span>${ab(false, s4ok)}
@@ -1879,13 +2077,29 @@ async function runStage(stage) {
 }
 
 async function runAll() {
-  if (!S.selectedCn) return;
+  if (!S.selectedCn || !S.detail) return;
+
+  // Identify pending stages and flag expensive/irreversible ones
+  const pending  = STAGES.filter(s => !S.detail.stages?.[s.key]);
+  const COSTLY   = { domain: "Domain Registration (costs money, irreversible)",
+                     certificate: "Certificate Download (browser automation)",
+                     duns: "DUNS Lookup (external submission)" };
+  const costly   = pending.filter(s => COSTLY[s.key]);
+
+  if (costly.length) {
+    const lines = costly.map(s => `• ${COSTLY[s.key]}`).join("\n");
+    const ok = confirm(
+      `Run ${pending.length} pending stage${pending.length > 1 ? "s" : ""} for ${S.detail.name}?\n\n` +
+      `Includes:\n${lines}\n\nContinue?`
+    );
+    if (!ok) return;
+  }
+
   const btn = document.getElementById("run-all-btn");
   if (btn) btn.disabled = true;
   try {
     await api("POST", `/api/v2/company/${S.selectedCn}/run-all`);
     toast("Running all pending stages…", "info");
-    // Open log for first pending stage
     if (S.detail) {
       const first = STAGES.find(s => !S.detail.stages?.[s.key]);
       if (first) openLog(first.key);
@@ -1927,12 +2141,28 @@ async function refreshLogContent() {
     const spin = document.getElementById("log-spinner");
     spin.style.display = j.status === "running" ? "" : "none";
 
-    const meta = STAGES.find(s => s.key === S.logStage);
-    const suffix = j.status === "running" ? " (running…)"
-                 : j.status === "done"    ? " ✓"
-                 : j.status === "failed"  ? " ✗ FAILED"
-                 : "";
-    document.getElementById("log-title").textContent = `Log — ${meta?.label || S.logStage}${suffix}`;
+    const meta  = STAGES.find(s => s.key === S.logStage);
+    const label = meta?.label || S.logStage;
+
+    // Build enriched title with timing metadata
+    const dur     = fmtDuration(j.started_at, j.finished_at);
+    const timeAgo = fmtRelTime(j.finished_at || j.started_at);
+    let statusTxt = "";
+    let metaTxt   = "";
+    if (j.status === "running") {
+      statusTxt = " · Running…";
+      metaTxt = j.started_at ? `started ${fmtRelTime(j.started_at)}` : "";
+    } else if (j.status === "done") {
+      statusTxt = " ✓";
+      metaTxt = [dur, timeAgo].filter(Boolean).join(" · ");
+    } else if (j.status === "failed") {
+      statusTxt = " ✗ Failed";
+      metaTxt = [dur, timeAgo].filter(Boolean).join(" · ");
+    }
+
+    document.getElementById("log-title").innerHTML =
+      `Log — ${x(label)}${x(statusTxt)}` +
+      (metaTxt ? ` <span class="log-job-meta">${x(metaTxt)}</span>` : "");
   } catch(e) { /* silent */ }
 }
 
