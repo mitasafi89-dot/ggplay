@@ -28,6 +28,31 @@
     <section class="panel active" id="panel-1">
       <h2>Pipeline Companies</h2>
       <p class="hint">Loaded from Excel. Click <strong>&#x26A1; Onboard</strong> to auto-fill missing data (short name, domain, email, DUNS).</p>
+
+      <!-- ═══ PULL FROM COMPANIES HOUSE (nationality + incorporation year) ═══ -->
+      <div class="card" id="pullCard" style="margin-bottom:1.25rem">
+        <h3 style="margin:0 0 .35rem">&#x1F50D; Pull from Companies House</h3>
+        <p class="hint" style="margin:0 0 .9rem">Retrieve new companies by director nationality and <strong>incorporation year</strong>, then save them to the pipeline. Defaults to last year.</p>
+        <div class="form-row">
+          <div class="field grow">
+            <label for="pullNationality">Nationality</label>
+            <select id="pullNationality"><option value="kenyan">Kenyan</option></select>
+          </div>
+          <div class="field grow">
+            <label for="pullYear">Incorporation year</label>
+            <select id="pullYear"></select>
+          </div>
+          <div class="field">
+            <label for="pullCount">How many</label>
+            <input id="pullCount" type="number" min="1" max="500" value="5" />
+          </div>
+          <button class="btn primary" id="btnPull" type="button">&#x1F50D; Pull companies</button>
+        </div>
+        <div id="pullStatus" class="status-bar hidden"></div>
+        <div class="progress-track hidden" id="pullProgressTrack" style="margin-top:.6rem"><div class="progress-fill" id="pullProgressBar"></div></div>
+        <pre id="pullLog" class="hidden" style="max-height:180px;overflow:auto;background:#0b1020;color:#cbd5e1;padding:.65rem .75rem;border-radius:6px;font-size:.72rem;line-height:1.45;margin-top:.6rem;white-space:pre-wrap"></pre>
+      </div>
+
       <div id="loadStatus" class="status-bar info">Loading...</div>
       <div class="table-wrap">
         <table id="companyTable">

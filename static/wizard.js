@@ -292,5 +292,72 @@ function resetWizard(){state={step:1,company:{},details:{},branding:{},domain:""
 window.resetWizard=resetWizard;
 
 // ─── Init ────────────────────────────────────────────────────
+// ─── Pull from Companies House (nationality + incorporation year) ─────────
+var _pullPolling=false;
+function setupPullControl(){
+  var sel=$("#pullYear"); if(!sel) return;
+  // Populate: "All years" + the last 12 calendar years, default = last year.
+  var now=new Date().getFullYear();
+  var opts='<option value="all">All years</option>';
+  for(var y=now;y>=now-12;y--){
+    var isLast=(y===now-1);
+    opts+='<option value="'+y+'"'+(isLast?' selected':'')+'>'+y+(isLast?' (last year)':'')+'</option>';
+  }
+  sel.innerHTML=opts;
+  $("#btnPull").addEventListener("click",startPull);
+}
+function startPull(){
+  if(_pullPolling)return;
+  var nationality=$("#pullNationality").value;
+  var yearVal=$("#pullYear").value;
+  var count=parseInt($("#pullCount").value,10);
+  var st=$("#pullStatus"),btn=$("#btnPull");
+  if(!count||count<1||count>500){show(st,"warning");st.textContent="Enter a count between 1 and 500.";return;}
+  var body={nationality:nationality,count:count};
+  if(yearVal==="all")body.all_years=true; else body.year=yearVal;
+  btn.disabled=true;_pullPolling=true;
+  show(st,"info");st.textContent="Starting retrieval\u2026";
+  $("#pullProgressTrack").classList.remove("hidden");$("#pullProgressBar").style.width="8%";
+  $("#pullLog").classList.add("hidden");$("#pullLog").textContent="";
+  fetch("/api/pipeline/run",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)})
+    .then(function(r){return r.json().then(function(d){return{ok:r.ok,d:d};});})
+    .then(function(res){
+      if(!res.ok||res.d.error){
+        show(st,"error");st.textContent="Could not start: "+(res.d.error||"unknown error");
+        finishPull();return;
+      }
+      show(st,"info");
+      st.innerHTML="\u23F3 Retrieving <strong>"+count+"</strong> "+nationality+" companies (incorporated "+(res.d.year_window||yearVal)+")\u2026";
+      $("#pullProgressBar").style.width="20%";
+      pollPull();
+    })
+    .catch(function(){show(st,"error");st.textContent="Connection failed.";finishPull();});
+}
+function pollPull(){
+  fetch("/api/pipeline/run/logs?tail=200").then(function(r){return r.json();}).then(function(d){
+    if(d.log){var pre=$("#pullLog");pre.classList.remove("hidden");pre.textContent=d.log;pre.scrollTop=pre.scrollHeight;}
+    if(d.running){
+      var bar=$("#pullProgressBar"),cur=parseFloat(bar.style.width)||20;
+      bar.style.width=Math.min(cur+4,90)+"%";
+      setTimeout(pollPull,3000);
+    }else{
+      // Confirm terminal state via status endpoint (exit code).
+      fetch("/api/pipeline/run/status").then(function(r){return r.json();}).then(function(s){
+        var st=$("#pullStatus");$("#pullProgressBar").style.width="100%";
+        if(s.exit_code===0||s.exit_code===null){
+          show(st,"success");st.innerHTML="\u2705 Retrieval finished. Reloading companies\u2026";
+          loadFromExcel();
+        }else{
+          show(st,"error");st.textContent="Retrieval exited with code "+s.exit_code+". See log above.";
+        }
+        finishPull();
+      });
+    }
+  }).catch(function(){setTimeout(pollPull,3000);});
+}
+function finishPull(){_pullPolling=false;$("#btnPull").disabled=false;}
+
+// ─── Init ───────────────────────────────────────────────────────────────
 document.getElementById("footYear").textContent=new Date().getFullYear();
+setupPullControl();
 loadFromExcel();

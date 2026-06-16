@@ -36,6 +36,13 @@ load_dotenv()
 API_KEY = os.getenv("COMPANIES_HOUSE_API_KEY")
 BASE_URL = "https://api.company-information.service.gov.uk"
 
+# Incorporation-year filtering (shared single source of truth). Import-path
+# tolerant: works both as a flat module and as part of a ``ggplay`` package.
+try:
+    from date_filters import resolve_year_window, incorporated_in_window, describe_window
+except ImportError:  # pragma: no cover - package-style execution
+    from ggplay.date_filters import resolve_year_window, incorporated_in_window, describe_window
+
 # Output paths
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CERTS_BASE_DIR = os.path.join(BASE_DIR, "certificates")
@@ -111,8 +118,14 @@ OFFICER_NAME_TERMS = {
 MAX_OFFICERS = 3
 
 
-def find_companies_by_nationality(nationality, count=1):
-    """Find companies with directors of a given nationality, up to `count` results."""
+def find_companies_by_nationality(nationality, count=1, year_from=None, year_to=None):
+    """Find companies with directors of a given nationality, up to `count` results.
+
+    When ``year_from`` / ``year_to`` are supplied (4-digit year strings, either
+    bound optional), only companies whose incorporation year falls within the
+    inclusive window are returned. An open window (both ``None``) disables the
+    filter.
+    """
     nat_lower = nationality.lower()
     officer_terms = OFFICER_NAME_TERMS.get(nat_lower, [])
     if not officer_terms:
@@ -178,6 +191,13 @@ def find_companies_by_nationality(nationality, count=1):
                     except Exception:
                         continue
 
+                    # Incorporation-year filter (shared logic). Skip companies
+                    # outside the requested window; companies with no usable
+                    # date are excluded whenever a window is set.
+                    inc_date = profile.get("date_of_creation", "")
+                    if not incorporated_in_window(inc_date, year_from, year_to):
+                        continue
+
                     # Count active officers
                     active_count = 0
                     try:
@@ -197,6 +217,7 @@ def find_companies_by_nationality(nationality, count=1):
                         "company_name": profile.get("company_name", ""),
                         "search_name": name.title(),
                         "matched_officer": officer.get("title", name),
+                        "date_of_creation": inc_date,
                     })
                     print(f"found {cn} ({profile.get('company_name', '')})")
                     break  # one company per officer
@@ -844,11 +865,16 @@ def load_existing_company_numbers():
 
 def run_pipeline(count=1, nationality="kenyan", skip_duns=False, skip_cert=False,
                  skip_domain=False, skip_email=False, headless=True,
-                 google_txt_token="", google_txt_host="@"):
-    """Run the full pipeline for `count` companies."""
+                 google_txt_token="", google_txt_host="@",
+                 year_from=None, year_to=None):
+    """Run the full pipeline for `count` companies.
+
+    ``year_from`` / ``year_to`` restrict retrieval to companies incorporated
+    within that inclusive year window (see ``date_filters``).
+    """
     print("=" * 60)
     print(f"PIPELINE START - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    print(f"Target: {count} companies | Nationality: {nationality}")
+    print(f"Target: {count} companies | Nationality: {nationality} | Incorporated: {describe_window(year_from, year_to)}")
     print(f"DUNS: {'skip' if skip_duns else 'enabled'} | Cert: {'skip' if skip_cert else 'enabled'} | Domain: {'skip' if skip_domain else 'enabled'} | Email: {'skip' if skip_email else 'enabled'}")
     print("Google: no browser/API automation; only local dossier + optional Namecheap TXT/forwarding")
     print("=" * 60)
@@ -870,8 +896,14 @@ def run_pipeline(count=1, nationality="kenyan", skip_duns=False, skip_cert=False
         print(f"\n  {len(existing_numbers)} companies already in Excel - will skip them")
 
     # Step 2: Find companies
-    print(f"\n[1] SEARCHING for {count} companies with {nationality} directors...")
-    companies = find_companies_by_nationality(nationality, count=count + len(existing_numbers))
+    print(f"\n[1] SEARCHING for {count} companies with {nationality} directors "
+          f"(incorporated: {describe_window(year_from, year_to)})...")
+    companies = find_companies_by_nationality(
+        nationality,
+        count=count + len(existing_numbers),
+        year_from=year_from,
+        year_to=year_to,
+    )
     if not companies:
         print("No companies found. Exiting.")
         return
@@ -1208,6 +1240,15 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Companies Pipeline")
     parser.add_argument("--count", type=int, default=1, help="Number of companies to process")
     parser.add_argument("--nationality", default="kenyan", help="Officer nationality filter")
+    parser.add_argument("--year", default=None,
+                        help="Only companies incorporated in this 4-digit year "
+                             "(default: last year). Use --all-years to disable.")
+    parser.add_argument("--year-from", default=None,
+                        help="Lower bound (inclusive) of incorporation year range")
+    parser.add_argument("--year-to", default=None,
+                        help="Upper bound (inclusive) of incorporation year range")
+    parser.add_argument("--all-years", action="store_true",
+                        help="Disable the incorporation-year filter (retrieve any year)")
     parser.add_argument("--no-duns", action="store_true", help="Skip DUNS lookup")
     parser.add_argument("--no-cert", action="store_true", help="Skip certificate download")
     parser.add_argument("--no-domain", action="store_true", help="Skip domain registration")
@@ -1220,6 +1261,15 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
     headless = args.headless.lower() != "false"
+
+    # Resolve the incorporation-year window once (defaults to last year).
+    year_from, year_to = resolve_year_window(
+        year=args.year,
+        year_from=args.year_from,
+        year_to=args.year_to,
+        all_years=args.all_years,
+        default_to_last_year=True,
+    )
 
     if args.play_dossier_only:
         generate_play_console_dossier_only()
@@ -1244,4 +1294,6 @@ if __name__ == "__main__":
             headless=headless,
             google_txt_token=args.google_txt_token,
             google_txt_host=args.google_txt_host,
+            year_from=year_from,
+            year_to=year_to,
         )

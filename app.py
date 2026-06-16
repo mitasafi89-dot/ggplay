@@ -21,6 +21,12 @@ register_wizard_routes(app)
 API_KEY = os.getenv("COMPANIES_HOUSE_API_KEY")
 BASE_URL = "https://api.company-information.service.gov.uk"
 
+# Incorporation-year filtering (shared single source of truth).
+try:
+    from date_filters import resolve_year_window, incorporated_in_window
+except ImportError:  # pragma: no cover - package-style execution
+    from ggplay.date_filters import resolve_year_window, incorporated_in_window
+
 # --- Connection pooling with retry ---
 _session = http_requests.Session()
 _adapter = HTTPAdapter(
@@ -143,13 +149,17 @@ BATCH_SIZE = 10  # parallel officer checks
 MAX_OFFICERS = 3   # only include companies with at most this many active officers
 
 
-def search_companies_page(query, start_index=0, size=50):
+def search_companies_page(query, start_index=0, size=50, year_from=None, year_to=None):
     data = ch_get("/search/companies", {"q": query, "items_per_page": size, "start_index": start_index})
     items = []
     for item in data.get("items", []):
         if item.get("company_status", "") != "active":
             continue
         inc_date = item.get("date_of_creation", "")
+        # Apply the incorporation-year filter to the name-query path too, so it
+        # is consistent with the officer-name path (previously this was skipped).
+        if not incorporated_in_window(inc_date, year_from, year_to):
+            continue
         items.append({
             "company_number": item.get("company_number", ""),
             "title": item.get("title", ""),
@@ -209,9 +219,7 @@ def find_one_company_for_officer(name_query, nat_lower, seen_companies, year_fro
 
                 inc_date = profile.get("date_of_creation", "")
                 year = inc_date[:4] if inc_date else ""
-                if year_from and year < year_from:
-                    continue
-                if year_to and year > year_to:
+                if not incorporated_in_window(inc_date, year_from, year_to):
                     continue
 
                 # Count active officers and collect nationalities
@@ -291,7 +299,7 @@ def generate_candidates(query, nationality, year_from, year_to):
     # Phase 1: user query (company name search)
     if query:
         try:
-            for item in search_companies_page(query, size=50):
+            for item in search_companies_page(query, size=50, year_from=year_from, year_to=year_to):
                 cn = item["company_number"]
                 if cn not in seen:
                     seen.add(cn)
@@ -316,9 +324,17 @@ def generate_candidates(query, nationality, year_from, year_to):
 @app.route("/api/search/stream")
 def api_search_stream():
     query = request.args.get("q", "").strip()
-    year_from = request.args.get("year_from", "").strip() or None
-    year_to = request.args.get("year_to", "").strip() or None
     nationality = request.args.get("nationality", "").strip()
+    # Incorporation-year window. Accepts a single ?year=YYYY, a ?year_from/
+    # ?year_to range, or ?all_years=1 to disable. Defaults to last year.
+    all_years = request.args.get("all_years", "").strip().lower() in ("1", "true", "yes")
+    year_from, year_to = resolve_year_window(
+        year=request.args.get("year", "").strip() or None,
+        year_from=request.args.get("year_from", "").strip() or None,
+        year_to=request.args.get("year_to", "").strip() or None,
+        all_years=all_years,
+        default_to_last_year=True,
+    )
 
     def generate():
         if not query and not nationality:

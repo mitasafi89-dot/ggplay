@@ -16,6 +16,12 @@ import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment
 from datetime import datetime
 
+# Incorporation-year filtering (shared single source of truth).
+try:
+    from date_filters import resolve_year_window, describe_window
+except ImportError:  # pragma: no cover - package-style execution
+    from ggplay.date_filters import resolve_year_window, describe_window
+
 wizard = Blueprint("wizard", __name__)
 
 EXCEL_FILE = os.path.join(
@@ -791,6 +797,18 @@ def pipeline_run_start():
     if not nationality:
         nationality = "kenyan"
 
+    # Resolve the incorporation-year window from the request (single year,
+    # range, or all_years), defaulting to last year when nothing is supplied.
+    all_years = str(data.get("all_years", "")).strip().lower() in ("1", "true", "yes") \
+        or data.get("all_years") is True
+    year_from, year_to = resolve_year_window(
+        year=data.get("year"),
+        year_from=data.get("year_from"),
+        year_to=data.get("year_to"),
+        all_years=all_years,
+        default_to_last_year=True,
+    )
+
     with _PIPELINE_LOCK:
         state = _snapshot_pipeline_state_locked()
         if state["running"]:
@@ -812,6 +830,18 @@ def pipeline_run_start():
             "--nationality", nationality,
         ]
 
+        # Translate the resolved window into explicit CLI flags so the
+        # subprocess does not re-default. (None, None) => disable the filter.
+        if year_from is None and year_to is None:
+            cmd.append("--all-years")
+        elif year_from == year_to:
+            cmd += ["--year", year_from]
+        else:
+            if year_from:
+                cmd += ["--year-from", year_from]
+            if year_to:
+                cmd += ["--year-to", year_to]
+
         logs_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "pipeline_output", "logs")
         os.makedirs(logs_dir, exist_ok=True)
         log_file_name = f"pipeline_run_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
@@ -823,7 +853,7 @@ def pipeline_run_start():
             log_handle = open(log_file_path, "a", encoding="utf-8", buffering=1)
             log_handle.write(f"[launcher] starting at {datetime.now().isoformat()}\n")
             log_handle.write(f"[launcher] command: {' '.join(cmd)}\n")
-            log_handle.write(f"[launcher] count={count} nationality={nationality}\n")
+            log_handle.write(f"[launcher] count={count} nationality={nationality} incorporated={describe_window(year_from, year_to)}\n")
             env = os.environ.copy()
             env["PYTHONUNBUFFERED"] = "1"
             env["PYTHONIOENCODING"] = "utf-8"
@@ -859,6 +889,9 @@ def pipeline_run_start():
             "started_at": _PIPELINE_RUN_STATE["started_at"],
             "count": count,
             "nationality": nationality,
+            "year_from": year_from,
+            "year_to": year_to,
+            "year_window": describe_window(year_from, year_to),
             "log_path": log_file_path,
         })
 
